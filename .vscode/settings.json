@@ -1,8 +1,0 @@
-{
-  "files.exclude": {
-    "**/._*": true,
-    "**/.DS_Store": true
-  },
-  "C_Cpp.default.configurationProvider": "",
-  "C_Cpp.errorSquiggles": "enabled"
-}
