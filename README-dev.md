@@ -1,87 +1,87 @@
-# RT1064DVL6B Mac VS Code + Parallels Keil Workflow
+# RT1064DVL6B Mac VS Code + Parallels Keil 工作流
 
-This workspace is based on the official SeekFree RT1064 library:
+本工作区基于逐飞官方 RT1064 开源库：
 
-- Source: https://gitee.com/seekfree/RT1064_Library
-- Checked out commit: `915dd7d2da4b37e041b565c8722e8a744245278c`
-- Main MDK project: `Example/Coreboard_Demo/E01_gpio_demo/mdk/rt1064.uvprojx`
-- Keil target: `nor_sdram_zf_dtcm`
-- First firmware: GPIO blink demo, toggling B9 in `Example/Coreboard_Demo/E01_gpio_demo/user/src/main.c`
+- 源仓库：https://gitee.com/seekfree/RT1064_Library
+- 检出提交：`915dd7d2da4b37e041b565c8722e8a744245278c`
+- 主 MDK 工程：`AI_Vision_RT1064/project/mdk/AI_Vision_RT1064.uvprojx`
+- Keil 目标：`nor_sdram_zf_dtcm`
+- 当前固件：AI 视觉竞赛工程脚手架，带 B9 心跳灯
 
-## Paths
+## 路径
 
-Windows paths used by Keil:
+Keil 使用的 Windows 路径：
 
-- Workspace: `C:\Users\jjp\Documents\Keil-work`
-- Keil: `C:\Users\jjp\Documents\Keil`
-- uVision: `C:\Users\jjp\Documents\Keil\UV4\UV4.exe`
-- Build wrapper: `C:\Users\jjp\Documents\Keil-work\tools\keil-build.ps1`
-- Active project: `C:\Users\jjp\Documents\Keil-work\Example\Coreboard_Demo\E01_gpio_demo\mdk\rt1064.uvprojx`
+- 工作区：`C:\Users\jjp\Documents\Keil-work`
+- Keil：`C:\Users\jjp\Documents\Keil`
+- uVision：`C:\Users\jjp\Documents\Keil\UV4\UV4.exe`
+- 构建封装脚本：`C:\Users\jjp\Documents\Keil-work\tools\keil-build.ps1`
+- 当前工程：`C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\project\mdk\AI_Vision_RT1064.uvprojx`
 
-macOS paths used by VS Code:
+VS Code 使用的 macOS 路径：
 
-- Workspace: `/Volumes/[C] Windows 11/Users/jjp/Documents/Keil-work`
-- Keil opener: Parallels `Keil uVision5.app`
+- 工作区：`/Volumes/[C] Windows 11/Users/jjp/Documents/Keil-work`
+- Keil 打开方式：Parallels `Keil uVision5.app`
 
-## VS Code Tasks
+## VS Code 任务
 
-Use `Terminal -> Run Task...`:
+使用 `Terminal -> Run Task...`：
 
-- `Keil: Open Project`: opens `rt1064.uvprojx` in Windows Keil through Parallels.
-- `Keil: Build`: builds the current MDK target through Windows OpenSSH.
-- `Keil: Rebuild`: rebuilds the current MDK target through Windows OpenSSH.
-- `Keil: Clean`: cleans the current MDK target through Windows OpenSSH.
-- `Keil: Flash/Debug`: triggers Keil flash download in the logged-in Windows desktop session through an interactive Windows scheduled task. For source-level debugging, use `Keil: Open Project` and start a uVision debug session.
+- `Keil: Open Project`：通过 Parallels 在 Windows Keil 中打开 `AI_Vision_RT1064.uvprojx`。
+- `Keil: Build`：通过 Windows OpenSSH 构建当前 MDK 目标。
+- `Keil: Rebuild`：通过 Windows OpenSSH 重新构建当前 MDK 目标。
+- `Keil: Clean`：通过 Windows OpenSSH 清理当前 MDK 目标。
+- `Keil: Flash/Debug`：通过交互式 Windows 计划任务，在已登录的 Windows 桌面会话中触发 Keil 下载。若需要源码级调试，请使用 `Keil: Open Project` 打开工程后，在 uVision 中启动调试会话。
 
-`Keil: Open Project` works without SSH. Build, rebuild, and clean use Windows OpenSSH Server over TCP port 22 because this Parallels edition does not support `prlctl exec`. Flash also needs SSH, but it starts a Windows scheduled task with `Interactive` logon so Keil's CMSIS-DAP DLL can access the USB probe from the real Windows desktop session.
+`Keil: Open Project` 不需要 SSH。构建、重新构建和清理会通过 TCP 22 端口使用 Windows OpenSSH Server，因为当前 Parallels 版本不支持 `prlctl exec`。下载同样需要 SSH，但它会以 `Interactive` 登录方式启动 Windows 计划任务，使 Keil 的 CMSIS-DAP DLL 能够从真实的 Windows 桌面会话访问 USB 仿真器。
 
-## Enable Windows OpenSSH
+## 启用 Windows OpenSSH
 
-In Windows PowerShell running as Administrator:
+在以管理员身份运行的 Windows PowerShell 中执行：
 
 ```powershell
 cd C:\Users\jjp\Documents\Keil-work
 powershell.exe -ExecutionPolicy Bypass -File .\tools\enable-openssh-windows.ps1
 ```
 
-Then test from macOS:
+然后在 macOS 中测试：
 
 ```bash
 ./tools/test-windows-ssh.sh
 ```
 
-If SSH says `Permission denied`, run this once in Windows PowerShell as user `jjp`:
+如果 SSH 提示 `Permission denied`，请在 Windows PowerShell 中以用户 `jjp` 身份执行一次：
 
 ```powershell
 cd C:\Users\jjp\Documents\Keil-work
 powershell.exe -ExecutionPolicy Bypass -File .\tools\install-mac-ssh-key-windows.ps1
 ```
 
-The VS Code tasks use a dedicated no-passphrase key at `~/.ssh/keil_windows_ed25519` so builds can run non-interactively.
+VS Code 任务使用专用的无密码密钥 `~/.ssh/keil_windows_ed25519`，因此构建可以非交互运行。
 
-The default Windows VM address is `10.211.55.3`, and this VM's Windows account name appears to be `Windows`, so the default SSH target is `Windows@10.211.55.3`. If the VM IP or username changes, set `KEIL_SSH_HOST`, for example `export KEIL_SSH_HOST=Windows@10.211.55.8`.
+默认 Windows 虚拟机地址为 `10.211.55.3`，此虚拟机的 Windows 账户名看起来是 `Windows`，因此默认 SSH 目标是 `Windows@10.211.55.3`。如果虚拟机 IP 或用户名发生变化，请设置 `KEIL_SSH_HOST`，例如：`export KEIL_SSH_HOST=Windows@10.211.55.8`。
 
 ## DAPLink
 
-The SeekFree MDK project is already configured for CMSIS-DAP:
+逐飞 MDK 工程已配置 CMSIS-DAP：
 
-- Debug monitor: `BIN\CMSIS_AGDI.dll`
-- Probe name in `.uvoptx`: `SEEKFREE CMSIS-DAP V2`
-- Probe serial in `.uvoptx`: `SF-3183007613204`
-- Flash algorithm: `MIMXRT1064_QSPI_4KB_SEC.FLM`
+- 调试监视器：`BIN\CMSIS_AGDI.dll`
+- `.uvoptx` 中的仿真器名称：`SEEKFREE CMSIS-DAP V2`
+- `.uvoptx` 中的仿真器序列号：`SF-3183007613204`
+- Flash 算法：`MIMXRT1064_QSPI_4KB_SEC.FLM`
 
-Connect the SeekFree DAPLink to the Windows VM, then open Keil and confirm the CMSIS-DAP probe appears before using `Keil: Flash`.
+将逐飞 DAPLink 连接到 Windows 虚拟机，然后打开 Keil，并在使用 `Keil: Flash/Debug` 前确认 CMSIS-DAP 仿真器已显示。
 
-If macOS captures the probe, use Parallels `Devices -> USB & Bluetooth -> SEEKFREE CMSIS-DAP` and assign it to `Windows 11`. Windows should show `SEEKFREE CMSIS-DAP V2`.
+如果 macOS 捕获了仿真器，请在 Parallels 中选择 `Devices -> USB & Bluetooth -> SEEKFREE CMSIS-DAP`，并将其分配给 `Windows 11`。Windows 应显示 `SEEKFREE CMSIS-DAP V2`。
 
-The verified flash log may end with `RDDI-DAP Error` after `Erase Done.Programming Done.Verify OK.Application running ...`. In this setup Keil still returns success and the firmware is already running; treat it as a post-download disconnect warning unless `Verify OK` is missing.
+已验证的下载日志可能会在 `Erase Done.Programming Done.Verify OK.Application running ...` 后以 `RDDI-DAP Error` 结束。在当前配置下，Keil 仍会返回成功，固件也已经运行；只要没有缺少 `Verify OK`，可将其视为下载后的断开连接警告。
 
-## First Run
+## 首次运行
 
-1. Run `Keil: Open Project`.
-2. In Keil, confirm the project opens without missing Pack warnings.
-3. Connect DAPLink to the Windows VM.
-4. Run `Keil: Build` after Windows OpenSSH is configured.
-5. Run `Keil: Flash/Debug`, or flash directly from Keil if SSH is not ready yet.
+1. 运行 `Keil: Open Project`。
+2. 在 Keil 中确认工程打开时没有缺少 Pack 的警告。
+3. 将 DAPLink 连接到 Windows 虚拟机。
+4. 配置 Windows OpenSSH 后，运行 `Keil: Build`。
+5. 运行 `Keil: Flash/Debug`，如果 SSH 尚未准备好，也可以直接在 Keil 中下载。
 
-The current `main.c` is the GPIO/Blink example at `Example/Coreboard_Demo/E01_gpio_demo/user/src/main.c`.
+当前工程入口为 `AI_Vision_RT1064/project/user/src/main.c`。视觉相关代码从 `AI_Vision_RT1064/project/code/vision_app.c` 开始。
