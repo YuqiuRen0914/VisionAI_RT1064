@@ -3,8 +3,8 @@ set -euo pipefail
 
 ACTION="${1:-build}"
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAC_PROJECT="${WORKSPACE_DIR}/AI_Vision_RT1064/project/mdk/AI_Vision_RT1064.uvprojx"
-WINDOWS_PROJECT='C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\project\mdk\AI_Vision_RT1064.uvprojx'
+MAC_PROJECT="${WORKSPACE_DIR}/Projects/AI_Vision_RT1064/project/mdk/AI_Vision_RT1064.uvprojx"
+WINDOWS_PROJECT='C:\Users\jjp\Documents\Keil-work\Projects\AI_Vision_RT1064\project\mdk\AI_Vision_RT1064.uvprojx'
 KEIL_SSH_HOST="${KEIL_SSH_HOST:-Windows@10.211.55.3}"
 KEIL_TRANSPORT="${KEIL_TRANSPORT:-ssh}"
 REMOTE_SCRIPT='C:\Users\jjp\Documents\Keil-work\tools\keil-build.ps1'
