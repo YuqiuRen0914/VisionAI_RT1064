@@ -15,7 +15,7 @@ Keil 使用的 Windows 路径：
 - 工作区：`C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064`
 - Keil：`C:\Users\jjp\Documents\Keil`
 - uVision：`C:\Users\jjp\Documents\Keil\UV4\UV4.exe`
-- 构建封装脚本：`C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\tools\keil-build.ps1`
+- 构建封装脚本：`C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\tools\keil\keil-build.ps1`
 - 当前工程：`C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\Projects\mdk\AI_Vision_RT1064.uvprojx`
 
 VS Code 使用的 macOS 路径：
@@ -41,20 +41,20 @@ VS Code 使用的 macOS 路径：
 
 ```powershell
 cd C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064
-powershell.exe -ExecutionPolicy Bypass -File .\tools\enable-openssh-windows.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\tools\windows\enable-openssh-windows.ps1
 ```
 
 然后在 macOS 中测试：
 
 ```bash
-./tools/test-windows-ssh.sh
+./tools/windows/test-windows-ssh.sh
 ```
 
 如果 SSH 提示 `Permission denied`，请在 Windows PowerShell 中以用户 `jjp` 身份执行一次：
 
 ```powershell
 cd C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064
-powershell.exe -ExecutionPolicy Bypass -File .\tools\install-mac-ssh-key-windows.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\tools\windows\install-mac-ssh-key-windows.ps1
 ```
 
 VS Code 任务使用专用的无密码密钥 `~/.ssh/keil_windows_ed25519`，因此构建可以非交互运行。
@@ -85,6 +85,10 @@ VS Code 任务使用专用的无密码密钥 `~/.ssh/keil_windows_ed25519`，因
 5. 运行 `Keil: Flash/Debug`，如果 SSH 尚未准备好，也可以直接在 Keil 中下载。
 
 当前工程入口为 `Projects/user/main.c`。应用任务从 `Projects/user/app/app_main.c` 开始，视觉模块位于 `Projects/user/app/module/`。
+
+## 逐飞助手
+
+逐飞助手已放在 `tools/vendor/seekfree_assistant/`，后续可用于串口助手、图传和数据测试。Windows 上位机文件位于该目录的 `【软件】逐飞助手上位机/` 子目录。
 
 ## macOS 元数据文件
 
