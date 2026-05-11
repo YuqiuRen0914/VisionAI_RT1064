@@ -1,5 +1,10 @@
 #include "mecanum.h"
 
+#define MECANUM_MOTOR1_SIGN    (1)
+#define MECANUM_MOTOR2_SIGN    (1)
+#define MECANUM_MOTOR3_SIGN    (1)
+#define MECANUM_MOTOR4_SIGN    (1)
+
 static int32_t mecanum_abs_i32(int32_t value)
 {
     return (value < 0) ? -value : value;
@@ -32,10 +37,10 @@ ai_status_t mecanum_solve_duty(const mecanum_velocity_t *velocity, mecanum_duty_
         return AI_ERR_INVALID_ARG;
     }
 
-    duty->motor1 = mecanum_saturate_i16((int32_t)velocity->vx - velocity->vy - velocity->wz);
-    duty->motor2 = mecanum_saturate_i16((int32_t)velocity->vx + velocity->vy + velocity->wz);
-    duty->motor3 = mecanum_saturate_i16((int32_t)velocity->vx - velocity->vy + velocity->wz);
-    duty->motor4 = mecanum_saturate_i16((int32_t)velocity->vx + velocity->vy - velocity->wz);
+    duty->motor1 = mecanum_saturate_i16(((int32_t)velocity->vx - velocity->vy - velocity->wz) * MECANUM_MOTOR1_SIGN);
+    duty->motor2 = mecanum_saturate_i16(((int32_t)velocity->vx + velocity->vy + velocity->wz) * MECANUM_MOTOR2_SIGN);
+    duty->motor3 = mecanum_saturate_i16(((int32_t)velocity->vx - velocity->vy + velocity->wz) * MECANUM_MOTOR3_SIGN);
+    duty->motor4 = mecanum_saturate_i16(((int32_t)velocity->vx + velocity->vy - velocity->wz) * MECANUM_MOTOR4_SIGN);
 
     return AI_OK;
 }
