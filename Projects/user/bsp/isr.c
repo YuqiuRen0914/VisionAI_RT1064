@@ -35,6 +35,8 @@
 
 #include "zf_common_headfile.h"
 #include "zf_common_debug.h"
+#include "drive.h"
+#include "drive_config.h"
 #include "isr.h"
 
 
@@ -48,9 +50,10 @@ void CSI_IRQHandler(void)
 
 void PIT_IRQHandler(void)
 {
-    if(pit_flag_get(PIT_CH0))
+    if(pit_flag_get(DRIVE_ENCODER_PIT_CHANNEL))
     {
-        pit_flag_clear(PIT_CH0);
+        DriveEncoderPitHandler();
+        pit_flag_clear(DRIVE_ENCODER_PIT_CHANNEL);
     }
     
     if(pit_flag_get(PIT_CH1))

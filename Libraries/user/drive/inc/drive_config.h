@@ -1,0 +1,51 @@
+#ifndef USER_LIBRARIES_DRIVE_CONFIG_H
+#define USER_LIBRARIES_DRIVE_CONFIG_H
+
+#include "zf_driver_encoder.h"
+#include "zf_driver_gpio.h"
+#include "zf_driver_pit.h"
+#include "zf_driver_pwm.h"
+
+#define DRIVE_PWM_FREQ_HZ                    (17000U)
+#define DRIVE_DUTY_PERCENT_MAX               (100)
+
+#define DRIVE_FORWARD_LEVEL                  (GPIO_HIGH)
+#define DRIVE_REVERSE_LEVEL                  (GPIO_LOW)
+#define DRIVE_DEFAULT_DIR_LEVEL              (DRIVE_FORWARD_LEVEL)
+
+#define DRIVE_WHEEL1_DIR_PIN                 (C9)
+#define DRIVE_WHEEL1_PWM_CHANNEL             (PWM2_MODULE1_CHA_C8)
+
+#define DRIVE_WHEEL2_DIR_PIN                 (C7)
+#define DRIVE_WHEEL2_PWM_CHANNEL             (PWM2_MODULE0_CHA_C6)
+
+#define DRIVE_WHEEL3_DIR_PIN                 (D2)
+#define DRIVE_WHEEL3_PWM_CHANNEL             (PWM2_MODULE3_CHB_D3)
+
+#define DRIVE_WHEEL4_DIR_PIN                 (C10)
+#define DRIVE_WHEEL4_PWM_CHANNEL             (PWM2_MODULE2_CHB_C11)
+
+#define DRIVE_ENCODER_PIT_CHANNEL            (PIT_CH0)
+#define DRIVE_ENCODER_SAMPLE_PERIOD_MS       (5U)
+
+#define DRIVE_WHEEL1_ENCODER                 (QTIMER1_ENCODER1)
+#define DRIVE_WHEEL1_ENCODER_CH1             (QTIMER1_ENCODER1_CH1_C0)
+#define DRIVE_WHEEL1_ENCODER_CH2             (QTIMER1_ENCODER1_CH2_C1)
+#define DRIVE_WHEEL1_ENCODER_SIGN            (1)
+
+#define DRIVE_WHEEL2_ENCODER                 (QTIMER1_ENCODER2)
+#define DRIVE_WHEEL2_ENCODER_CH1             (QTIMER1_ENCODER2_CH1_C2)
+#define DRIVE_WHEEL2_ENCODER_CH2             (QTIMER1_ENCODER2_CH2_C24)
+#define DRIVE_WHEEL2_ENCODER_SIGN            (1)
+
+#define DRIVE_WHEEL3_ENCODER                 (QTIMER2_ENCODER1)
+#define DRIVE_WHEEL3_ENCODER_CH1             (QTIMER2_ENCODER1_CH1_C3)
+#define DRIVE_WHEEL3_ENCODER_CH2             (QTIMER2_ENCODER1_CH2_C4)
+#define DRIVE_WHEEL3_ENCODER_SIGN            (1)
+
+#define DRIVE_WHEEL4_ENCODER                 (QTIMER2_ENCODER2)
+#define DRIVE_WHEEL4_ENCODER_CH1             (QTIMER2_ENCODER2_CH1_C5)
+#define DRIVE_WHEEL4_ENCODER_CH2             (QTIMER2_ENCODER2_CH2_C25)
+#define DRIVE_WHEEL4_ENCODER_SIGN            (1)
+
+#endif
