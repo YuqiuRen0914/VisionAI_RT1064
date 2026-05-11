@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Workspace = "C:\Users\jjp\Documents\Keil-work"
+$Workspace = "C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064"
 $KeilBuildScript = Join-Path $Workspace "tools\keil-build.ps1"
 $TaskDir = Join-Path $Workspace ".keil-task"
 $StatusFile = Join-Path $TaskDir "$Action.status"

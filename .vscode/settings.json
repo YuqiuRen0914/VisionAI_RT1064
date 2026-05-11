@@ -1,0 +1,14 @@
+{
+  "files.exclude": {
+    "**/._*": true,
+    "**/.DS_Store": true,
+    "**/.AppleDouble": true,
+    "**/.TemporaryItems": true
+  },
+  "search.exclude": {
+    "**/._*": true,
+    "**/.DS_Store": true,
+    "**/.AppleDouble": true,
+    "**/.TemporaryItems": true
+  }
+}

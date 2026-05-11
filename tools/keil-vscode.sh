@@ -3,13 +3,13 @@ set -euo pipefail
 
 ACTION="${1:-build}"
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAC_PROJECT="${WORKSPACE_DIR}/Projects/AI_Vision_RT1064/project/mdk/AI_Vision_RT1064.uvprojx"
-WINDOWS_PROJECT='C:\Users\jjp\Documents\Keil-work\Projects\AI_Vision_RT1064\project\mdk\AI_Vision_RT1064.uvprojx'
+MAC_PROJECT="${WORKSPACE_DIR}/Projects/mdk/AI_Vision_RT1064.uvprojx"
+WINDOWS_PROJECT='C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\Projects\mdk\AI_Vision_RT1064.uvprojx'
 KEIL_SSH_HOST="${KEIL_SSH_HOST:-Windows@10.211.55.3}"
 KEIL_TRANSPORT="${KEIL_TRANSPORT:-ssh}"
-REMOTE_SCRIPT='C:\Users\jjp\Documents\Keil-work\tools\keil-build.ps1'
-REMOTE_INTERACTIVE_SCRIPT='C:\Users\jjp\Documents\Keil-work\tools\run-keil-interactive.ps1'
-WINDOWS_WORKSPACE='C:\Users\jjp\Documents\Keil-work'
+REMOTE_SCRIPT='C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\tools\keil-build.ps1'
+REMOTE_INTERACTIVE_SCRIPT='C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064\tools\run-keil-interactive.ps1'
+WINDOWS_WORKSPACE='C:\Users\jjp\Documents\Keil-work\AI_Vision_RT1064'
 
 if [[ -z "${KEIL_MAC_APP:-}" ]]; then
   KEIL_MAC_APP='/Users/roderick/Applications (Parallels)/{d013f16b-1e31-403d-90a7-037c7ed44306} Applications.localized/Keil uVision5.app'

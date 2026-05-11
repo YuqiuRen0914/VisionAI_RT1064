@@ -1,10 +1,12 @@
-# Keil RT1064 Workspace
+# AI Vision RT1064
 
-This workspace contains the AI Vision RT1064 firmware project, shared libraries, hardware documents, and Keil helper scripts.
+This repository contains the AI Vision RT1064 firmware project, shared libraries, hardware documents, and Keil helper scripts.
 
 ## Layout
 
-- `Projects/AI_Vision_RT1064/`: AI Vision firmware project.
+- `Projects/`: AI Vision firmware project sources and MDK project files.
+- `Projects/mdk/AI_Vision_RT1064.uvprojx`: Keil MDK project.
+- `Projects/app/`, `Projects/bsp/`, `Projects/module/`: application, board support, and feature modules.
 - `Libraries/official/seekfree/`: SeekFree RT1064 official library, examples, and reference project.
 - `Libraries/official/freertos/`: FreeRTOS kernel used by the firmware project.
 - `Libraries/user/`: project-owned device and board libraries.
