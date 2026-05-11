@@ -39,6 +39,7 @@
 #include "drive_config.h"
 #include "imu660ra.h"
 #include "isr.h"
+#include "vision_protocol.h"
 
 
 
@@ -115,10 +116,7 @@ void LPUART4_IRQHandler(void)
 {
     if(kLPUART_RxDataRegFullFlag & LPUART_GetStatusFlags(LPUART4))
     {
-        // 接收中断 
-        flexio_camera_uart_handler();
-        
-        gnss_uart_callback();
+        vision_protocol_uart_irq_handler();
     }
         
     LPUART_ClearStatusFlags(LPUART4, kLPUART_RxOverrunFlag);    // 不允许删除

@@ -37,8 +37,8 @@ ai_status_t mecanum_solve_duty(const mecanum_velocity_t *velocity, mecanum_duty_
         return AI_ERR_INVALID_ARG;
     }
 
-    duty->motor1 = mecanum_saturate_i16(((int32_t)velocity->vx - velocity->vy - velocity->wz) * MECANUM_MOTOR1_SIGN);
-    duty->motor2 = mecanum_saturate_i16(((int32_t)velocity->vx + velocity->vy + velocity->wz) * MECANUM_MOTOR2_SIGN);
+    duty->motor1 = mecanum_saturate_i16(((int32_t)velocity->vx + velocity->vy + velocity->wz) * MECANUM_MOTOR1_SIGN);
+    duty->motor2 = mecanum_saturate_i16(((int32_t)velocity->vx - velocity->vy - velocity->wz) * MECANUM_MOTOR2_SIGN);
     duty->motor3 = mecanum_saturate_i16(((int32_t)velocity->vx - velocity->vy + velocity->wz) * MECANUM_MOTOR3_SIGN);
     duty->motor4 = mecanum_saturate_i16(((int32_t)velocity->vx + velocity->vy - velocity->wz) * MECANUM_MOTOR4_SIGN);
 

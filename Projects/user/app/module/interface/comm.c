@@ -9,6 +9,8 @@
 #include "drive.h"
 #include "imu660ra.h"
 #include "motion.h"
+#include "vision.h"
+#include "vision_protocol.h"
 #include "wireless.h"
 #include "zf_common_debug.h"
 
@@ -54,6 +56,7 @@ static DriveEncoderTotal comm_enc100_last_total;
 static uint32_t comm_enc100_elapsed_ms;
 static DriveEncoderDelta comm_enc100_delta;
 static comm_imu_stat_t comm_imu_stat;
+static uint8_t comm_vision_sim_seq;
 
 static void comm_send_raw(const char *text)
 {
@@ -168,6 +171,26 @@ static ai_status_t comm_parse_i32(const char *text, int32_t *value)
     return AI_OK;
 }
 
+static ai_status_t comm_parse_u8_auto(const char *text, uint8_t *value)
+{
+    char *end_ptr;
+    unsigned long parsed;
+
+    if((text == NULL) || (value == NULL) || (text[0] == '\0'))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    parsed = strtoul(text, &end_ptr, 0);
+    if((end_ptr == text) || (*end_ptr != '\0') || (parsed > UINT8_MAX))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    *value = (uint8_t)parsed;
+    return AI_OK;
+}
+
 static ai_status_t comm_validate_duty_arg(int32_t duty)
 {
     if((duty > AI_TEST_DUTY_PERCENT_MAX) || (duty < -AI_TEST_DUTY_PERCENT_MAX))
@@ -242,6 +265,12 @@ static void comm_send_help(void)
     comm_send_line("stream data is text: DATA <mode> ...");
     comm_send_line("motor <1|2|3|4|all> <duty_pct> <ms>");
     comm_send_line("move <fwd|back|left|right|ccw|cw> <duty_pct> <ms>");
+    comm_send_line("vision");
+    comm_send_line("vision clear");
+    comm_send_line("vision sim move <up|down|left|right> <cm> [seq]");
+    comm_send_line("vision sim rotate <ccw|cw> <90|180> [seq]");
+    comm_send_line("vision sim stop|query|reset [seq]");
+    comm_send_line("vision sim raw <seq> <cmd> <dir> <val>");
 }
 
 static ai_status_t comm_read_imu_scaled(Imu660raScaledData *imu,
@@ -691,6 +720,337 @@ static void comm_handle_move_command(char *move_text)
     }
 }
 
+static void comm_send_vision_sim_result(ai_status_t status, const uint8_t *frame, uint8_t explicit_seq)
+{
+    if(status == AI_OK)
+    {
+        if(explicit_seq == 0U)
+        {
+            comm_vision_sim_seq++;
+        }
+
+        comm_send_line("OK vision sim %02X %02X %02X %02X %02X %02X %02X",
+                       (unsigned int)frame[0],
+                       (unsigned int)frame[1],
+                       (unsigned int)frame[2],
+                       (unsigned int)frame[3],
+                       (unsigned int)frame[4],
+                       (unsigned int)frame[5],
+                       (unsigned int)frame[6]);
+    }
+    else if(status == AI_ERR_BUSY)
+    {
+        comm_send_line("ERR vision sim busy");
+    }
+    else
+    {
+        comm_send_line("ERR vision sim bad_arg");
+    }
+}
+
+static void comm_inject_vision_sim_frame(uint8_t seq,
+                                         uint8_t cmd,
+                                         uint8_t dir,
+                                         uint8_t val,
+                                         uint8_t explicit_seq)
+{
+    uint8_t frame[VISION_PROTOCOL_FRAME_LENGTH];
+    ai_status_t status;
+
+    status = vision_protocol_inject_frame(seq, cmd, dir, val, frame);
+    comm_send_vision_sim_result(status, frame, explicit_seq);
+}
+
+static ai_status_t comm_get_vision_sim_seq(char *seq_text, uint8_t *seq, uint8_t *explicit_seq)
+{
+    if((seq == NULL) || (explicit_seq == NULL))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(seq_text == NULL)
+    {
+        *seq = comm_vision_sim_seq;
+        *explicit_seq = 0U;
+        return AI_OK;
+    }
+
+    if(comm_parse_u8_auto(seq_text, seq) != AI_OK)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    *explicit_seq = 1U;
+    return AI_OK;
+}
+
+static ai_status_t comm_parse_vision_sim_move_dir(const char *dir_text, uint8_t *dir)
+{
+    if((dir_text == NULL) || (dir == NULL))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(strcmp(dir_text, "up") == 0)
+    {
+        *dir = VISION_PROTOCOL_MOVE_UP;
+    }
+    else if(strcmp(dir_text, "down") == 0)
+    {
+        *dir = VISION_PROTOCOL_MOVE_DOWN;
+    }
+    else if(strcmp(dir_text, "left") == 0)
+    {
+        *dir = VISION_PROTOCOL_MOVE_LEFT;
+    }
+    else if(strcmp(dir_text, "right") == 0)
+    {
+        *dir = VISION_PROTOCOL_MOVE_RIGHT;
+    }
+    else
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    return AI_OK;
+}
+
+static ai_status_t comm_parse_vision_sim_rotate_dir(const char *dir_text, uint8_t *dir)
+{
+    if((dir_text == NULL) || (dir == NULL))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(strcmp(dir_text, "ccw") == 0)
+    {
+        *dir = VISION_PROTOCOL_ROTATE_CCW;
+    }
+    else if(strcmp(dir_text, "cw") == 0)
+    {
+        *dir = VISION_PROTOCOL_ROTATE_CW;
+    }
+    else
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    return AI_OK;
+}
+
+static ai_status_t comm_parse_vision_sim_angle(const char *angle_text, uint8_t *val)
+{
+    int32_t angle;
+
+    if((val == NULL) || (comm_parse_i32(angle_text, &angle) != AI_OK))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(angle == 90)
+    {
+        *val = VISION_PROTOCOL_ROTATE_90_VAL;
+    }
+    else if(angle == 180)
+    {
+        *val = VISION_PROTOCOL_ROTATE_180_VAL;
+    }
+    else
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    return AI_OK;
+}
+
+static void comm_handle_vision_sim_move(void)
+{
+    char *dir_text = strtok(NULL, " ");
+    char *cm_text = strtok(NULL, " ");
+    char *seq_text = strtok(NULL, " ");
+    uint8_t seq;
+    uint8_t explicit_seq;
+    uint8_t dir;
+    int32_t cm;
+
+    if((dir_text == NULL) ||
+       (cm_text == NULL) ||
+       (comm_parse_vision_sim_move_dir(dir_text, &dir) != AI_OK) ||
+       (comm_parse_i32(cm_text, &cm) != AI_OK) ||
+       (cm <= 0) ||
+       (cm > UINT8_MAX) ||
+       (comm_get_vision_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK))
+    {
+        comm_send_line("ERR vision sim bad_arg");
+        return;
+    }
+
+    comm_inject_vision_sim_frame(seq, VISION_PROTOCOL_CMD_MOVE, dir, (uint8_t)cm, explicit_seq);
+}
+
+static void comm_handle_vision_sim_rotate(void)
+{
+    char *dir_text = strtok(NULL, " ");
+    char *angle_text = strtok(NULL, " ");
+    char *seq_text = strtok(NULL, " ");
+    uint8_t seq;
+    uint8_t explicit_seq;
+    uint8_t dir;
+    uint8_t val;
+
+    if((dir_text == NULL) ||
+       (angle_text == NULL) ||
+       (comm_parse_vision_sim_rotate_dir(dir_text, &dir) != AI_OK) ||
+       (comm_parse_vision_sim_angle(angle_text, &val) != AI_OK) ||
+       (comm_get_vision_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK))
+    {
+        comm_send_line("ERR vision sim bad_arg");
+        return;
+    }
+
+    comm_inject_vision_sim_frame(seq, VISION_PROTOCOL_CMD_ROTATE, dir, val, explicit_seq);
+}
+
+static void comm_handle_vision_sim_simple(uint8_t cmd)
+{
+    char *seq_text = strtok(NULL, " ");
+    uint8_t seq;
+    uint8_t explicit_seq;
+
+    if(comm_get_vision_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK)
+    {
+        comm_send_line("ERR vision sim bad_arg");
+        return;
+    }
+
+    comm_inject_vision_sim_frame(seq, cmd, 0U, 0U, explicit_seq);
+}
+
+static void comm_handle_vision_sim_raw(void)
+{
+    char *seq_text = strtok(NULL, " ");
+    char *cmd_text = strtok(NULL, " ");
+    char *dir_text = strtok(NULL, " ");
+    char *val_text = strtok(NULL, " ");
+    uint8_t seq;
+    uint8_t cmd;
+    uint8_t dir;
+    uint8_t val;
+
+    if((comm_parse_u8_auto(seq_text, &seq) != AI_OK) ||
+       (comm_parse_u8_auto(cmd_text, &cmd) != AI_OK) ||
+       (comm_parse_u8_auto(dir_text, &dir) != AI_OK) ||
+       (comm_parse_u8_auto(val_text, &val) != AI_OK))
+    {
+        comm_send_line("ERR vision sim bad_arg");
+        return;
+    }
+
+    comm_inject_vision_sim_frame(seq, cmd, dir, val, 1U);
+}
+
+static void comm_handle_vision_sim_command(void)
+{
+    char *sim_command = strtok(NULL, " ");
+
+    if(sim_command == NULL)
+    {
+        comm_send_line("ERR vision sim usage");
+        return;
+    }
+
+    if(strcmp(sim_command, "move") == 0)
+    {
+        comm_handle_vision_sim_move();
+    }
+    else if(strcmp(sim_command, "rotate") == 0)
+    {
+        comm_handle_vision_sim_rotate();
+    }
+    else if(strcmp(sim_command, "stop") == 0)
+    {
+        comm_handle_vision_sim_simple(VISION_PROTOCOL_CMD_STOP);
+    }
+    else if(strcmp(sim_command, "query") == 0)
+    {
+        comm_handle_vision_sim_simple(VISION_PROTOCOL_CMD_QUERY);
+    }
+    else if(strcmp(sim_command, "reset") == 0)
+    {
+        comm_handle_vision_sim_simple(VISION_PROTOCOL_CMD_RESET);
+    }
+    else if(strcmp(sim_command, "raw") == 0)
+    {
+        comm_handle_vision_sim_raw();
+    }
+    else
+    {
+        comm_send_line("ERR vision sim usage");
+    }
+}
+
+static void comm_handle_vision_command(char *sub_command)
+{
+    vision_debug_t debug;
+
+    if((sub_command != NULL) && (strcmp(sub_command, "sim") == 0))
+    {
+        comm_handle_vision_sim_command();
+        return;
+    }
+
+    if((sub_command != NULL) && (strcmp(sub_command, "clear") == 0))
+    {
+        vision_debug_clear();
+        comm_send_line("OK vision clear");
+        return;
+    }
+
+    vision_debug_get(&debug);
+    comm_send_line("OK vision status=%u parser=%u active_seq=%u rx_bytes=%lu frames_ok=%lu bad_frame=%lu bad_cmd=%lu busy=%lu motion_err=%lu",
+                   (unsigned int)debug.status,
+                   (unsigned int)debug.parser_state,
+                   (unsigned int)debug.active_seq,
+                   (unsigned long)debug.rx_bytes,
+                   (unsigned long)debug.frames_ok,
+                   (unsigned long)debug.bad_frames,
+                   (unsigned long)debug.bad_cmds,
+                   (unsigned long)debug.busy_errors,
+                   (unsigned long)debug.motion_errors);
+    comm_send_line("OK vision cmd move=%lu rotate=%lu stop=%lu query=%lu reset=%lu last=%02X %02X %02X %02X err=%02X:%02X:%02X ovf=%lu",
+                   (unsigned long)debug.move_cmds,
+                   (unsigned long)debug.rotate_cmds,
+                   (unsigned long)debug.stop_cmds,
+                   (unsigned long)debug.query_cmds,
+                   (unsigned long)debug.reset_cmds,
+                   (unsigned int)debug.last_seq,
+                   (unsigned int)debug.last_cmd,
+                   (unsigned int)debug.last_dir,
+                   (unsigned int)debug.last_val,
+                   (unsigned int)debug.last_error_seq,
+                   (unsigned int)debug.last_error,
+                   (unsigned int)debug.last_error_context,
+                   (unsigned long)debug.rx_overflows);
+    comm_send_line("DATA vision_rx count=%u %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                   (unsigned int)debug.last_rx_count,
+                   (unsigned int)debug.last_rx[0],
+                   (unsigned int)debug.last_rx[1],
+                   (unsigned int)debug.last_rx[2],
+                   (unsigned int)debug.last_rx[3],
+                   (unsigned int)debug.last_rx[4],
+                   (unsigned int)debug.last_rx[5],
+                   (unsigned int)debug.last_rx[6],
+                   (unsigned int)debug.last_rx[7],
+                   (unsigned int)debug.last_rx[8],
+                   (unsigned int)debug.last_rx[9],
+                   (unsigned int)debug.last_rx[10],
+                   (unsigned int)debug.last_rx[11],
+                   (unsigned int)debug.last_rx[12],
+                   (unsigned int)debug.last_rx[13],
+                   (unsigned int)debug.last_rx[14],
+                   (unsigned int)debug.last_rx[15]);
+}
+
 static void comm_handle_line(char *line)
 {
     char *command = strtok(line, " ");
@@ -740,6 +1100,10 @@ static void comm_handle_line(char *line)
     else if(strcmp(command, "move") == 0)
     {
         comm_handle_move_command(strtok(NULL, " "));
+    }
+    else if(strcmp(command, "vision") == 0)
+    {
+        comm_handle_vision_command(strtok(NULL, " "));
     }
     else
     {
@@ -850,6 +1214,7 @@ ai_status_t comm_module_init(void)
     comm_command_seen = 0;
     comm_ready_report_elapsed_ms = 0;
     comm_ready_report_count = 0;
+    comm_vision_sim_seq = 0;
     comm_stream_mode = COMM_STREAM_OFF;
     comm_enc100_elapsed_ms = 0;
     comm_enc100_delta.wheel1 = 0;
