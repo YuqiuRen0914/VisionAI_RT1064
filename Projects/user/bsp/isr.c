@@ -37,6 +37,7 @@
 #include "zf_common_debug.h"
 #include "drive.h"
 #include "drive_config.h"
+#include "imu660ra.h"
 #include "isr.h"
 
 
@@ -58,6 +59,7 @@ void PIT_IRQHandler(void)
     
     if(pit_flag_get(PIT_CH1))
     {
+        Imu660raPitHandler();
         pit_flag_clear(PIT_CH1);
     }
     

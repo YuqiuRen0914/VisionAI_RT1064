@@ -4,6 +4,7 @@
 #include "drive.h"
 #include "drive_config.h"
 #include "event.h"
+#include "imu660ra.h"
 #include "mecanum.h"
 
 static int16_t motion_line_offset;
@@ -44,6 +45,8 @@ static void motion_motor_test_tick(void)
 
 ai_status_t motion_module_init(void)
 {
+    ai_status_t status;
+
     motion_line_offset = 0;
     motion_target_speed = 0;
 #if AI_MOTOR_TEST_ENABLE
@@ -51,7 +54,13 @@ ai_status_t motion_module_init(void)
     motor_test_phase = 0;
 #endif
 
-    return motion_drive_status_to_ai(DriveInit());
+    status = motion_drive_status_to_ai(DriveInit());
+    if(status != AI_OK)
+    {
+        return status;
+    }
+
+    return Imu660raInit();
 }
 
 void motion_module_tick(void)
