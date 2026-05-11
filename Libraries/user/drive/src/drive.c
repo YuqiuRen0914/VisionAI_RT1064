@@ -5,8 +5,15 @@
 
 typedef struct
 {
+#if (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DIR_PWM)
     gpio_pin_enum dirPin;
     pwm_channel_enum pwmChannel;
+#elif (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DUAL_PWM)
+    gpio_pin_enum forwardPin;
+    pwm_channel_enum forwardPwmChannel;
+    gpio_pin_enum reversePin;
+    pwm_channel_enum reversePwmChannel;
+#endif
 } DriveMotorHardware;
 
 typedef struct
@@ -19,10 +26,17 @@ typedef struct
 
 static const DriveMotorHardware driveMotorHardware[DRIVE_WHEEL_COUNT] =
 {
+#if (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DIR_PWM)
     {DRIVE_WHEEL1_DIR_PIN, DRIVE_WHEEL1_PWM_CHANNEL},
     {DRIVE_WHEEL2_DIR_PIN, DRIVE_WHEEL2_PWM_CHANNEL},
     {DRIVE_WHEEL3_DIR_PIN, DRIVE_WHEEL3_PWM_CHANNEL},
     {DRIVE_WHEEL4_DIR_PIN, DRIVE_WHEEL4_PWM_CHANNEL},
+#elif (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DUAL_PWM)
+    {DRIVE_WHEEL1_PWM_FORWARD_PIN, DRIVE_WHEEL1_PWM_FORWARD_CHANNEL, DRIVE_WHEEL1_PWM_REVERSE_PIN, DRIVE_WHEEL1_PWM_REVERSE_CHANNEL},
+    {DRIVE_WHEEL2_PWM_FORWARD_PIN, DRIVE_WHEEL2_PWM_FORWARD_CHANNEL, DRIVE_WHEEL2_PWM_REVERSE_PIN, DRIVE_WHEEL2_PWM_REVERSE_CHANNEL},
+    {DRIVE_WHEEL3_PWM_FORWARD_PIN, DRIVE_WHEEL3_PWM_FORWARD_CHANNEL, DRIVE_WHEEL3_PWM_REVERSE_PIN, DRIVE_WHEEL3_PWM_REVERSE_CHANNEL},
+    {DRIVE_WHEEL4_PWM_FORWARD_PIN, DRIVE_WHEEL4_PWM_FORWARD_CHANNEL, DRIVE_WHEEL4_PWM_REVERSE_PIN, DRIVE_WHEEL4_PWM_REVERSE_CHANNEL},
+#endif
 };
 
 static const DriveEncoderHardware driveEncoderHardware[DRIVE_WHEEL_COUNT] =
@@ -34,6 +48,7 @@ static const DriveEncoderHardware driveEncoderHardware[DRIVE_WHEEL_COUNT] =
 };
 
 static volatile int16_t driveEncoderDelta[DRIVE_WHEEL_COUNT];
+static volatile int32_t driveEncoderTotal[DRIVE_WHEEL_COUNT];
 
 static uint16_t DriveDutyPercentToPwm(int16_t dutyPercent)
 {
@@ -78,14 +93,22 @@ DriveStatus DriveInit(void)
 {
     for(uint8_t i = 0; i < (uint8_t)DRIVE_WHEEL_COUNT; i++)
     {
+#if (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DIR_PWM)
         gpio_init(driveMotorHardware[i].dirPin, GPO, DRIVE_DEFAULT_DIR_LEVEL, GPO_PUSH_PULL);
         pwm_init(driveMotorHardware[i].pwmChannel, DRIVE_PWM_FREQ_HZ, 0);
+#elif (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DUAL_PWM)
+        gpio_init(driveMotorHardware[i].forwardPin, GPO, GPIO_LOW, GPO_PUSH_PULL);
+        gpio_init(driveMotorHardware[i].reversePin, GPO, GPIO_LOW, GPO_PUSH_PULL);
+        pwm_init(driveMotorHardware[i].forwardPwmChannel, DRIVE_PWM_FREQ_HZ, 0);
+        pwm_init(driveMotorHardware[i].reversePwmChannel, DRIVE_PWM_FREQ_HZ, 0);
+#endif
 
         encoder_quad_init(driveEncoderHardware[i].encoder,
                           driveEncoderHardware[i].ch1Pin,
                           driveEncoderHardware[i].ch2Pin);
         encoder_clear_count(driveEncoderHardware[i].encoder);
         driveEncoderDelta[i] = 0;
+        driveEncoderTotal[i] = 0;
     }
 
     pit_ms_init(DRIVE_ENCODER_PIT_CHANNEL, DRIVE_ENCODER_SAMPLE_PERIOD_MS);
@@ -95,20 +118,43 @@ DriveStatus DriveInit(void)
 
 DriveStatus DriveSetDuty(DriveWheelId id, int16_t dutyPercent)
 {
+#if (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DIR_PWM)
     uint8_t direction = DRIVE_FORWARD_LEVEL;
+#endif
+    uint16_t pwmDuty;
 
     if((id < DRIVE_WHEEL_1) || (id >= DRIVE_WHEEL_COUNT))
     {
         return DRIVE_STATUS_INVALID_ARG;
     }
 
+    pwmDuty = DriveDutyPercentToPwm(dutyPercent);
+
+#if (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DIR_PWM)
     if(dutyPercent < 0)
     {
         direction = DRIVE_REVERSE_LEVEL;
     }
 
     gpio_set_level(driveMotorHardware[id].dirPin, direction);
-    pwm_set_duty(driveMotorHardware[id].pwmChannel, DriveDutyPercentToPwm(dutyPercent));
+    pwm_set_duty(driveMotorHardware[id].pwmChannel, pwmDuty);
+#elif (DRIVE_CONTROL_MODE == DRIVE_CONTROL_MODE_DUAL_PWM)
+    if(dutyPercent > 0)
+    {
+        pwm_set_duty(driveMotorHardware[id].reversePwmChannel, 0);
+        pwm_set_duty(driveMotorHardware[id].forwardPwmChannel, pwmDuty);
+    }
+    else if(dutyPercent < 0)
+    {
+        pwm_set_duty(driveMotorHardware[id].forwardPwmChannel, 0);
+        pwm_set_duty(driveMotorHardware[id].reversePwmChannel, pwmDuty);
+    }
+    else
+    {
+        pwm_set_duty(driveMotorHardware[id].forwardPwmChannel, 0);
+        pwm_set_duty(driveMotorHardware[id].reversePwmChannel, 0);
+    }
+#endif
 
     return DRIVE_STATUS_OK;
 }
@@ -166,6 +212,25 @@ DriveStatus DriveGetAllEncoderDelta(DriveEncoderDelta *delta)
     return DRIVE_STATUS_OK;
 }
 
+DriveStatus DriveGetAllEncoderTotal(DriveEncoderTotal *total)
+{
+    uint32_t primask;
+
+    if(total == 0)
+    {
+        return DRIVE_STATUS_INVALID_ARG;
+    }
+
+    primask = interrupt_global_disable();
+    total->wheel1 = driveEncoderTotal[DRIVE_WHEEL_1];
+    total->wheel2 = driveEncoderTotal[DRIVE_WHEEL_2];
+    total->wheel3 = driveEncoderTotal[DRIVE_WHEEL_3];
+    total->wheel4 = driveEncoderTotal[DRIVE_WHEEL_4];
+    interrupt_global_enable(primask);
+
+    return DRIVE_STATUS_OK;
+}
+
 void DriveEncoderPitHandler(void)
 {
     for(uint8_t i = 0; i < (uint8_t)DRIVE_WHEEL_COUNT; i++)
@@ -174,6 +239,7 @@ void DriveEncoderPitHandler(void)
         const int16_t count = encoder_get_count(encoder);
 
         driveEncoderDelta[i] = DriveApplyEncoderSign(count, driveEncoderHardware[i].sign);
+        driveEncoderTotal[i] += driveEncoderDelta[i];
         encoder_clear_count(encoder);
     }
 }

@@ -9,9 +9,13 @@
 #define AI_COMM_PERIOD_MS               20U
 #define AI_INTERACT_PERIOD_MS           50U
 
-#define AI_MOTOR_TEST_ENABLE            1
+#define AI_MOTOR_TEST_ENABLE            0
 #define AI_MOTOR_TEST_DUTY_PERCENT      20
 #define AI_MOTOR_TEST_RUN_MS            800U
 #define AI_MOTOR_TEST_STOP_MS           400U
+
+#define AI_OPEN_LOOP_TEST_ENABLE        1
+#define AI_TEST_DUTY_PERCENT_MAX        30
+#define AI_TEST_RUN_MS_MAX              3000U
 
 #endif

@@ -26,6 +26,14 @@ typedef struct
     int16_t wheel4;
 } DriveEncoderDelta;
 
+typedef struct
+{
+    int32_t wheel1;
+    int32_t wheel2;
+    int32_t wheel3;
+    int32_t wheel4;
+} DriveEncoderTotal;
+
 DriveStatus DriveInit(void);
 DriveStatus DriveSetDuty(DriveWheelId id, int16_t dutyPercent);
 DriveStatus DriveSetAllDuty(int16_t wheel1Duty,
@@ -36,6 +44,7 @@ void DriveStopAll(void);
 
 DriveStatus DriveGetEncoderDelta(DriveWheelId id, int16_t *delta);
 DriveStatus DriveGetAllEncoderDelta(DriveEncoderDelta *delta);
+DriveStatus DriveGetAllEncoderTotal(DriveEncoderTotal *total);
 void DriveEncoderPitHandler(void);
 
 #endif

@@ -5,3 +5,9 @@
 .keil-task/
 **/Objects/
 **/Listings/
+tools/vendor/seekfree_assistant/**/bsdtar_out/
+tools/vendor/seekfree_assistant/**/extracted_ascii/
+tools/vendor/seekfree_assistant/**/extracted_ascii2/
+tools/vendor/seekfree_assistant/**/fixed*.zip
+tools/vendor/seekfree_assistant/**/*combined.zip
+tools/vendor/seekfree_assistant/**/*extract.log
