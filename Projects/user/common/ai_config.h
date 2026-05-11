@@ -7,6 +7,7 @@
 #define AI_VISION_PERIOD_MS             10U
 #define AI_MOTION_PERIOD_MS             5U
 #define AI_COMM_PERIOD_MS               20U
+#define AI_INTERACT_PERIOD_MS           50U
 
 #define AI_MOTOR_TEST_ENABLE            1
 #define AI_MOTOR_TEST_DUTY_PERCENT      20

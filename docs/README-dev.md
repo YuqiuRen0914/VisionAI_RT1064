@@ -84,7 +84,7 @@ VS Code 任务使用专用的无密码密钥 `~/.ssh/keil_windows_ed25519`，因
 4. 配置 Windows OpenSSH 后，运行 `Keil: Build`。
 5. 运行 `Keil: Flash/Debug`，如果 SSH 尚未准备好，也可以直接在 Keil 中下载。
 
-当前工程入口为 `Projects/user/src/main.c`。应用任务从 `Projects/app/app_main.c` 开始，视觉模块位于 `Projects/module/vision/`。
+当前工程入口为 `Projects/user/main.c`。应用任务从 `Projects/user/app/app_main.c` 开始，视觉模块位于 `Projects/user/app/module/`。
 
 ## macOS 元数据文件
 

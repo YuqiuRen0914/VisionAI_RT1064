@@ -1,6 +1,5 @@
 #include "comm.h"
 
-#include "telemetry.h"
 #include "wireless.h"
 
 ai_status_t comm_module_init(void)

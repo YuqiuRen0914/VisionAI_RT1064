@@ -3,7 +3,9 @@
 #include "ai_config.h"
 #include "encoder.h"
 #include "event.h"
+#include "mecanum.h"
 #include "motor.h"
+#include "motor_config.h"
 
 static int16_t motion_line_offset;
 static int16_t motion_target_speed;
@@ -60,6 +62,8 @@ void motion_module_tick(void)
     motion_motor_test_tick();
 #else
     event_msg_t event;
+    mecanum_duty_t duty;
+    mecanum_velocity_t velocity;
     int16_t left_speed;
     int16_t right_speed;
 
@@ -76,7 +80,17 @@ void motion_module_tick(void)
     (void)left_speed;
     (void)right_speed;
 
-    (void)MotorSetLeftRightDuty(motion_target_speed - motion_line_offset,
-                                motion_target_speed + motion_line_offset);
+    velocity.vx = motion_target_speed;
+    velocity.vy = 0;
+    velocity.wz = (int16_t)-motion_line_offset;
+
+    if((mecanum_solve_duty(&velocity, &duty) == AI_OK) &&
+       (mecanum_normalize_duty(&duty, MOTOR_DUTY_PERCENT_MAX) == AI_OK))
+    {
+        (void)MotorSetAllDuty(duty.motor1,
+                              duty.motor2,
+                              duty.motor3,
+                              duty.motor4);
+    }
 #endif
 }

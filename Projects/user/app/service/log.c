@@ -4,7 +4,6 @@
 
 void log_service_init(void)
 {
-    (void)WirelessInit();
 }
 
 ai_status_t log_write(const char *text)

@@ -342,7 +342,7 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\bsp\isr.c</PathWithFileName>
+      <PathWithFileName>..\user\bsp\isr.c</PathWithFileName>
       <FilenameWithoutPath>isr.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
@@ -354,7 +354,7 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\user\src\main.c</PathWithFileName>
+      <PathWithFileName>..\user\main.c</PathWithFileName>
       <FilenameWithoutPath>main.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
@@ -374,7 +374,7 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\bsp\isr.h</PathWithFileName>
+      <PathWithFileName>..\user\bsp\isr.h</PathWithFileName>
       <FilenameWithoutPath>isr.h</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>

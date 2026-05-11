@@ -3,6 +3,7 @@
 #include "ai_config.h"
 #include "bsp_board.h"
 #include "comm.h"
+#include "interact.h"
 #include "motion.h"
 #include "os_port.h"
 #include "task_cfg.h"
@@ -41,6 +42,17 @@ static void comm_task(void *argument)
     }
 }
 
+static void interact_task(void *argument)
+{
+    (void)argument;
+
+    while(1)
+    {
+        interact_module_tick();
+        os_port_delay_ms(AI_INTERACT_PERIOD_MS);
+    }
+}
+
 static void heartbeat_task(void *argument)
 {
     (void)argument;
@@ -57,6 +69,7 @@ void app_task_create_all(void)
     (void)os_port_create_task(vision_task, "vision", TASK_STACK_VISION, NULL, TASK_PRIO_VISION);
     (void)os_port_create_task(motion_task, "motion", TASK_STACK_MOTION, NULL, TASK_PRIO_MOTION);
     (void)os_port_create_task(comm_task, "comm", TASK_STACK_COMM, NULL, TASK_PRIO_COMM);
+    (void)os_port_create_task(interact_task, "interact", TASK_STACK_INTERACT, NULL, TASK_PRIO_INTERACT);
     (void)os_port_create_task(heartbeat_task, "heartbeat", TASK_STACK_HEARTBEAT, NULL, TASK_PRIO_HEARTBEAT);
 }
 
@@ -67,6 +80,7 @@ void app_task_run_cooperative(void)
         vision_module_tick();
         motion_module_tick();
         comm_module_tick();
+        interact_module_tick();
         board_heartbeat_toggle();
         os_port_delay_ms(AI_HEARTBEAT_PERIOD_MS);
     }

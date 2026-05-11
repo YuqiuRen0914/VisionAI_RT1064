@@ -4,9 +4,9 @@ This repository contains the AI Vision RT1064 firmware project, shared libraries
 
 ## Layout
 
-- `Projects/`: AI Vision firmware project sources and MDK project files.
+- `Projects/`: AI Vision firmware user sources and MDK project files.
 - `Projects/mdk/AI_Vision_RT1064.uvprojx`: Keil MDK project.
-- `Projects/app/`, `Projects/bsp/`, `Projects/module/`: application, board support, and feature modules.
+- `Projects/user/`: project-owned firmware code, including `app/`, `bsp/`, `common/`, and `rtos/`.
 - `Libraries/official/seekfree/`: SeekFree RT1064 official library, examples, and reference project.
 - `Libraries/official/freertos/`: FreeRTOS kernel used by the firmware project.
 - `Libraries/user/`: project-owned device and board libraries.

@@ -340,7 +340,7 @@
               <MiscControls>-fno-common  -fdata-sections  -ffreestanding  -fno-builtin  -mthumb -Wno-invalid-source-encoding</MiscControls>
               <Define>CPU_MIMXRT1064DVL6A,SKIP_SYSCLK_INIT,XIP_EXTERNAL_FLASH=1, XIP_BOOT_HEADER_DCD_ENABLE =1, XIP_BOOT_HEADER_ENABLE =1,PRINTF_FLOAT_ENABLE=1, SCANF_FLOAT_ENABLE=1, PRINTF_ADVANCED_ENABLE=1, SCANF_ADVANCED_ENABLE=1, FSL_DRIVER_TRANSFER_DOUBLE_WEAK_IRQ=0, USB_STACK_BM, DEBUG, MCUXPRESSO_SDK, SD_ENABLED</Define>
               <Undefine></Undefine>
-              <IncludePath>..\app;..\bsp;..\common;..\rtos;..\..\Libraries\official\freertos\FreeRTOS-Kernel\include;..\..\Libraries\official\freertos\FreeRTOS-Kernel\portable\GCC\ARM_CM7\r0p1;..\module\vision;..\module\motion;..\module\comm;..\module\interact;..\service\event;..\service\log;..\service\param;..\service\telemetry;..\..\Libraries\user\motor\inc;..\..\Libraries\user\camera_mt9v03x\inc;..\..\Libraries\user\encoder\inc;..\..\Libraries\user\wireless\inc;..\..\Libraries\user\display\inc;..\..\Libraries\official\seekfree\libraries\sdk\startup\mdk;..\..\Libraries\official\seekfree\libraries\sdk\deceive;..\..\Libraries\official\seekfree\libraries\sdk\drives;..\..\Libraries\official\seekfree\libraries\sdk\xip;..\..\Libraries\official\seekfree\libraries\sdk\utilities;..\..\Libraries\official\seekfree\libraries\sdk\utilities\debug_console;..\..\Libraries\official\seekfree\libraries\sdk\utilities\str;..\..\Libraries\official\seekfree\libraries\sdk\cmsis_drivers;..\..\Libraries\official\seekfree\libraries\sdk\CMSIS\Include;..\..\Libraries\official\seekfree\libraries\sdk\CMSIS\Driver\Include;..\..\Libraries\official\seekfree\libraries\sdk\components\lists;..\..\Libraries\official\seekfree\libraries\sdk\components\osa;..\..\Libraries\official\seekfree\libraries\sdk\components\serial_manager;..\..\Libraries\official\seekfree\libraries\sdk\components\uart;..\..\Libraries\official\seekfree\libraries\sdk\board;..\..\Libraries\official\seekfree\libraries\components\fatfs\source;..\..\Libraries\official\seekfree\libraries\components\fatfs\source\fsl_sd_disk;..\..\Libraries\official\seekfree\libraries\components\sdmmc;..\..\Libraries\official\seekfree\libraries\components\sdmmc\common;..\..\Libraries\official\seekfree\libraries\components\sdmmc\host\usdhc;..\..\Libraries\official\seekfree\libraries\components\sdmmc\osa;..\..\Libraries\official\seekfree\libraries\components\sdmmc\sd;..\..\Libraries\official\seekfree\libraries\components\usb\device;..\..\Libraries\official\seekfree\libraries\components\usb\include;..\..\Libraries\official\seekfree\libraries\components\usb\phy;..\..\Libraries\official\seekfree\libraries\components\usb\usb_cdc_adapter;..\..\Libraries\official\seekfree\libraries\zf_common;..\..\Libraries\official\seekfree\libraries\zf_driver;..\..\Libraries\official\seekfree\libraries\zf_device;..\..\Libraries\official\seekfree\libraries\zf_components</IncludePath>
+              <IncludePath>..\user;..\user\app;..\user\app\module;..\user\app\module\perception;..\user\app\module\motion;..\user\app\module\interface;..\user\app\service;..\user\bsp;..\user\common;..\user\rtos;..\..\Libraries\official\freertos\FreeRTOS-Kernel\include;..\..\Libraries\official\freertos\FreeRTOS-Kernel\portable\GCC\ARM_CM7\r0p1;..\..\Libraries\user\motor\inc;..\..\Libraries\user\camera_mt9v03x\inc;..\..\Libraries\user\encoder\inc;..\..\Libraries\user\wireless\inc;..\..\Libraries\user\display\inc;..\..\Libraries\official\seekfree\libraries\sdk\startup\mdk;..\..\Libraries\official\seekfree\libraries\sdk\deceive;..\..\Libraries\official\seekfree\libraries\sdk\drives;..\..\Libraries\official\seekfree\libraries\sdk\xip;..\..\Libraries\official\seekfree\libraries\sdk\utilities;..\..\Libraries\official\seekfree\libraries\sdk\utilities\debug_console;..\..\Libraries\official\seekfree\libraries\sdk\utilities\str;..\..\Libraries\official\seekfree\libraries\sdk\cmsis_drivers;..\..\Libraries\official\seekfree\libraries\sdk\CMSIS\Include;..\..\Libraries\official\seekfree\libraries\sdk\CMSIS\Driver\Include;..\..\Libraries\official\seekfree\libraries\sdk\components\lists;..\..\Libraries\official\seekfree\libraries\sdk\components\osa;..\..\Libraries\official\seekfree\libraries\sdk\components\serial_manager;..\..\Libraries\official\seekfree\libraries\sdk\components\uart;..\..\Libraries\official\seekfree\libraries\sdk\board;..\..\Libraries\official\seekfree\libraries\components\fatfs\source;..\..\Libraries\official\seekfree\libraries\components\fatfs\source\fsl_sd_disk;..\..\Libraries\official\seekfree\libraries\components\sdmmc;..\..\Libraries\official\seekfree\libraries\components\sdmmc\common;..\..\Libraries\official\seekfree\libraries\components\sdmmc\host\usdhc;..\..\Libraries\official\seekfree\libraries\components\sdmmc\osa;..\..\Libraries\official\seekfree\libraries\components\sdmmc\sd;..\..\Libraries\official\seekfree\libraries\components\usb\device;..\..\Libraries\official\seekfree\libraries\components\usb\include;..\..\Libraries\official\seekfree\libraries\components\usb\phy;..\..\Libraries\official\seekfree\libraries\components\usb\usb_cdc_adapter;..\..\Libraries\official\seekfree\libraries\zf_common;..\..\Libraries\official\seekfree\libraries\zf_driver;..\..\Libraries\official\seekfree\libraries\zf_device;..\..\Libraries\official\seekfree\libraries\zf_components</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -387,43 +387,43 @@
             <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\user\src\main.c</FilePath>
+              <FilePath>..\user\main.c</FilePath>
             </File>
           </Files>
         </Group>
         <Group>
           <GroupName>app</GroupName>
           <Files>
-            <File><FileName>app_main.c</FileName><FileType>1</FileType><FilePath>..\app\app_main.c</FilePath></File>
-            <File><FileName>app_main.h</FileName><FileType>5</FileType><FilePath>..\app\app_main.h</FilePath></File>
-            <File><FileName>app_task.c</FileName><FileType>1</FileType><FilePath>..\app\app_task.c</FilePath></File>
-            <File><FileName>app_task.h</FileName><FileType>5</FileType><FilePath>..\app\app_task.h</FilePath></File>
+            <File><FileName>app_main.c</FileName><FileType>1</FileType><FilePath>..\user\app\app_main.c</FilePath></File>
+            <File><FileName>app_main.h</FileName><FileType>5</FileType><FilePath>..\user\app\app_main.h</FilePath></File>
+            <File><FileName>app_task.c</FileName><FileType>1</FileType><FilePath>..\user\app\app_task.c</FilePath></File>
+            <File><FileName>app_task.h</FileName><FileType>5</FileType><FilePath>..\user\app\app_task.h</FilePath></File>
           </Files>
         </Group>
         <Group>
           <GroupName>module</GroupName>
           <Files>
-            <File><FileName>vision.c</FileName><FileType>1</FileType><FilePath>..\module\vision\vision.c</FilePath></File>
-            <File><FileName>vision.h</FileName><FileType>5</FileType><FilePath>..\module\vision\vision.h</FilePath></File>
-            <File><FileName>motion.c</FileName><FileType>1</FileType><FilePath>..\module\motion\motion.c</FilePath></File>
-            <File><FileName>motion.h</FileName><FileType>5</FileType><FilePath>..\module\motion\motion.h</FilePath></File>
-            <File><FileName>comm.c</FileName><FileType>1</FileType><FilePath>..\module\comm\comm.c</FilePath></File>
-            <File><FileName>comm.h</FileName><FileType>5</FileType><FilePath>..\module\comm\comm.h</FilePath></File>
-            <File><FileName>interact.c</FileName><FileType>1</FileType><FilePath>..\module\interact\interact.c</FilePath></File>
-            <File><FileName>interact.h</FileName><FileType>5</FileType><FilePath>..\module\interact\interact.h</FilePath></File>
+            <File><FileName>vision.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\perception\vision.c</FilePath></File>
+            <File><FileName>vision.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\perception\vision.h</FilePath></File>
+            <File><FileName>motion.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion.c</FilePath></File>
+            <File><FileName>motion.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion.h</FilePath></File>
+            <File><FileName>mecanum.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\mecanum.c</FilePath></File>
+            <File><FileName>mecanum.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\mecanum.h</FilePath></File>
+            <File><FileName>comm.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm.c</FilePath></File>
+            <File><FileName>comm.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm.h</FilePath></File>
+            <File><FileName>interact.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\interact.c</FilePath></File>
+            <File><FileName>interact.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\interact.h</FilePath></File>
           </Files>
         </Group>
         <Group>
           <GroupName>service</GroupName>
           <Files>
-            <File><FileName>event.c</FileName><FileType>1</FileType><FilePath>..\service\event\event.c</FilePath></File>
-            <File><FileName>event.h</FileName><FileType>5</FileType><FilePath>..\service\event\event.h</FilePath></File>
-            <File><FileName>log.c</FileName><FileType>1</FileType><FilePath>..\service\log\log.c</FilePath></File>
-            <File><FileName>log.h</FileName><FileType>5</FileType><FilePath>..\service\log\log.h</FilePath></File>
-            <File><FileName>param.c</FileName><FileType>1</FileType><FilePath>..\service\param\param.c</FilePath></File>
-            <File><FileName>param.h</FileName><FileType>5</FileType><FilePath>..\service\param\param.h</FilePath></File>
-            <File><FileName>telemetry.c</FileName><FileType>1</FileType><FilePath>..\service\telemetry\telemetry.c</FilePath></File>
-            <File><FileName>telemetry.h</FileName><FileType>5</FileType><FilePath>..\service\telemetry\telemetry.h</FilePath></File>
+            <File><FileName>event.c</FileName><FileType>1</FileType><FilePath>..\user\app\service\event.c</FilePath></File>
+            <File><FileName>event.h</FileName><FileType>5</FileType><FilePath>..\user\app\service\event.h</FilePath></File>
+            <File><FileName>log.c</FileName><FileType>1</FileType><FilePath>..\user\app\service\log.c</FilePath></File>
+            <File><FileName>log.h</FileName><FileType>5</FileType><FilePath>..\user\app\service\log.h</FilePath></File>
+            <File><FileName>param.c</FileName><FileType>1</FileType><FilePath>..\user\app\service\param.c</FilePath></File>
+            <File><FileName>param.h</FileName><FileType>5</FileType><FilePath>..\user\app\service\param.h</FilePath></File>
           </Files>
         </Group>
         <Group>
@@ -445,23 +445,23 @@
         <Group>
           <GroupName>bsp</GroupName>
           <Files>
-            <File><FileName>bsp_board.c</FileName><FileType>1</FileType><FilePath>..\bsp\bsp_board.c</FilePath></File>
-            <File><FileName>bsp_board.h</FileName><FileType>5</FileType><FilePath>..\bsp\bsp_board.h</FilePath></File>
-            <File><FileName>clock_cfg.c</FileName><FileType>1</FileType><FilePath>..\bsp\clock_cfg.c</FilePath></File>
-            <File><FileName>clock_cfg.h</FileName><FileType>5</FileType><FilePath>..\bsp\clock_cfg.h</FilePath></File>
-            <File><FileName>pinmap.h</FileName><FileType>5</FileType><FilePath>..\bsp\pinmap.h</FilePath></File>
-            <File><FileName>isr.c</FileName><FileType>1</FileType><FilePath>..\bsp\isr.c</FilePath></File>
-            <File><FileName>isr.h</FileName><FileType>5</FileType><FilePath>..\bsp\isr.h</FilePath></File>
+            <File><FileName>bsp_board.c</FileName><FileType>1</FileType><FilePath>..\user\bsp\bsp_board.c</FilePath></File>
+            <File><FileName>bsp_board.h</FileName><FileType>5</FileType><FilePath>..\user\bsp\bsp_board.h</FilePath></File>
+            <File><FileName>clock_cfg.c</FileName><FileType>1</FileType><FilePath>..\user\bsp\clock_cfg.c</FilePath></File>
+            <File><FileName>clock_cfg.h</FileName><FileType>5</FileType><FilePath>..\user\bsp\clock_cfg.h</FilePath></File>
+            <File><FileName>pinmap.h</FileName><FileType>5</FileType><FilePath>..\user\bsp\pinmap.h</FilePath></File>
+            <File><FileName>isr.c</FileName><FileType>1</FileType><FilePath>..\user\bsp\isr.c</FilePath></File>
+            <File><FileName>isr.h</FileName><FileType>5</FileType><FilePath>..\user\bsp\isr.h</FilePath></File>
           </Files>
         </Group>
         <Group>
           <GroupName>rtos</GroupName>
           <Files>
-            <File><FileName>freertos_hooks.c</FileName><FileType>1</FileType><FilePath>..\rtos\freertos_hooks.c</FilePath></File>
-            <File><FileName>os_port.c</FileName><FileType>1</FileType><FilePath>..\rtos\os_port.c</FilePath></File>
-            <File><FileName>os_port.h</FileName><FileType>5</FileType><FilePath>..\rtos\os_port.h</FilePath></File>
-            <File><FileName>task_cfg.h</FileName><FileType>5</FileType><FilePath>..\rtos\task_cfg.h</FilePath></File>
-            <File><FileName>FreeRTOSConfig.h</FileName><FileType>5</FileType><FilePath>..\rtos\FreeRTOSConfig.h</FilePath></File>
+            <File><FileName>freertos_hooks.c</FileName><FileType>1</FileType><FilePath>..\user\rtos\freertos_hooks.c</FilePath></File>
+            <File><FileName>os_port.c</FileName><FileType>1</FileType><FilePath>..\user\rtos\os_port.c</FilePath></File>
+            <File><FileName>os_port.h</FileName><FileType>5</FileType><FilePath>..\user\rtos\os_port.h</FilePath></File>
+            <File><FileName>task_cfg.h</FileName><FileType>5</FileType><FilePath>..\user\rtos\task_cfg.h</FilePath></File>
+            <File><FileName>FreeRTOSConfig.h</FileName><FileType>5</FileType><FilePath>..\user\rtos\FreeRTOSConfig.h</FilePath></File>
           </Files>
         </Group>
         <Group>
@@ -477,9 +477,9 @@
         <Group>
           <GroupName>common</GroupName>
           <Files>
-            <File><FileName>ai_config.h</FileName><FileType>5</FileType><FilePath>..\common\ai_config.h</FilePath></File>
-            <File><FileName>ai_error.h</FileName><FileType>5</FileType><FilePath>..\common\ai_error.h</FilePath></File>
-            <File><FileName>ai_type.h</FileName><FileType>5</FileType><FilePath>..\common\ai_type.h</FilePath></File>
+            <File><FileName>ai_config.h</FileName><FileType>5</FileType><FilePath>..\user\common\ai_config.h</FilePath></File>
+            <File><FileName>ai_error.h</FileName><FileType>5</FileType><FilePath>..\user\common\ai_error.h</FilePath></File>
+            <File><FileName>ai_type.h</FileName><FileType>5</FileType><FilePath>..\user\common\ai_type.h</FilePath></File>
           </Files>
         </Group>
         <Group>
