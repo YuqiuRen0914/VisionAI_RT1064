@@ -59,6 +59,7 @@
 
 #define DRIVE_ENCODER_PIT_CHANNEL            (PIT_CH0)
 #define DRIVE_ENCODER_SAMPLE_PERIOD_MS       (5U)
+#define DRIVE_WHEEL_DIAMETER_MM              (63U)
 
 #define DRIVE_WHEEL1_ENCODER                 (QTIMER1_ENCODER1)
 #define DRIVE_WHEEL1_ENCODER_CH1             (QTIMER1_ENCODER1_CH1_C0)

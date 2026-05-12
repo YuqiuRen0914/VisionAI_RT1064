@@ -390,6 +390,7 @@ OK cal enc wheel=4 counts=<计数值> turns=5 counts_per_rev_x100=<每圈计数*
 本次已将 `counts_per_rev_x100` 复制到 `Libraries/user/drive/inc/drive_config.h`：
 
 ```c
+#define DRIVE_WHEEL_DIAMETER_MM              (63U)
 #define DRIVE_WHEEL1_COUNTS_PER_REV_X100     (238870)
 #define DRIVE_WHEEL2_COUNTS_PER_REV_X100     (239000)
 #define DRIVE_WHEEL3_COUNTS_PER_REV_X100     (238903)
