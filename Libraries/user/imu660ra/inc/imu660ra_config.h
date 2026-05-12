@@ -5,6 +5,6 @@
 
 #define IMU660RA_SAMPLE_PIT_CHANNEL        (PIT_CH1)
 #define IMU660RA_SAMPLE_PERIOD_MS          (5U)
-#define IMU660RA_YAW_AXIS_SIGN             (1.0f)
+#define IMU660RA_BODY_YAW_AXIS_SIGN        (1.0f)
 
 #endif

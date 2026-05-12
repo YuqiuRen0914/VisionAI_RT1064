@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ai_config.h"
+#include "calibration/calibration_telemetry.h"
 #include "drive.h"
 #include "imu660ra.h"
 #include "motion.h"
@@ -26,6 +27,7 @@ typedef enum
     COMM_STREAM_OFF = 0,
     COMM_STREAM_IMU_ACC,
     COMM_STREAM_IMU_GYRO,
+    COMM_STREAM_IMU_YAWX,
     COMM_STREAM_ENC5,
     COMM_STREAM_ENC100,
     COMM_STREAM_DUTY,
@@ -55,6 +57,8 @@ static comm_stream_mode_t comm_stream_mode;
 static DriveEncoderTotal comm_enc100_last_total;
 static uint32_t comm_enc100_elapsed_ms;
 static DriveEncoderDelta comm_enc100_delta;
+static calibration_encoder_state_t comm_cal_encoder;
+static calibration_yawx_state_t comm_cal_yawx;
 static comm_imu_stat_t comm_imu_stat;
 static uint8_t comm_vision_sim_seq;
 
@@ -238,6 +242,11 @@ static const char *comm_stream_name(comm_stream_mode_t mode)
         return "enc5";
     }
 
+    if(mode == COMM_STREAM_IMU_YAWX)
+    {
+        return "imu_yawx";
+    }
+
     if(mode == COMM_STREAM_ENC100)
     {
         return "enc100";
@@ -260,9 +269,13 @@ static void comm_send_help(void)
     comm_send_line("disarm");
     comm_send_line("status");
     comm_send_line("imu zero");
+    comm_send_line("imu yawx zero");
     comm_send_line("imu stat <ms>");
-    comm_send_line("stream off|imu_acc|imu_gyro|enc5|enc100|duty");
+    comm_send_line("stream off|imu_acc|imu_gyro|imu_yawx|enc5|enc100|duty");
     comm_send_line("stream data is text: DATA <mode> ...");
+    comm_send_line("cal enc zero");
+    comm_send_line("cal enc total|delta");
+    comm_send_line("cal enc wheel <1|2|3|4> <turns>");
     comm_send_line("motor <1|2|3|4|all> <duty_pct> <ms>");
     comm_send_line("move <fwd|back|left|right|ccw|cw> <duty_pct> <ms>");
     comm_send_line("vision");
@@ -323,6 +336,43 @@ static ai_status_t comm_read_imu_scaled(Imu660raScaledData *imu,
     }
 
     return AI_OK;
+}
+
+static void comm_encoder_total_to_counts(const DriveEncoderTotal *total,
+                                         calibration_wheel_counts_t *counts)
+{
+    counts->wheel1 = total->wheel1;
+    counts->wheel2 = total->wheel2;
+    counts->wheel3 = total->wheel3;
+    counts->wheel4 = total->wheel4;
+}
+
+static ai_status_t comm_read_encoder_counts(calibration_wheel_counts_t *counts)
+{
+    DriveEncoderTotal total;
+
+    if(counts == NULL)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(DriveGetAllEncoderTotal(&total) != DRIVE_STATUS_OK)
+    {
+        return AI_ERR_NO_DATA;
+    }
+
+    comm_encoder_total_to_counts(&total, counts);
+    return AI_OK;
+}
+
+static void comm_send_encoder_counts(const char *label, const calibration_wheel_counts_t *counts)
+{
+    comm_send_line("DATA %s w1=%ld w2=%ld w3=%ld w4=%ld",
+                   label,
+                   (long)counts->wheel1,
+                   (long)counts->wheel2,
+                   (long)counts->wheel3,
+                   (long)counts->wheel4);
 }
 
 static void comm_start_imu_stat(uint32_t duration_ms)
@@ -447,6 +497,7 @@ static void comm_send_stream_frame(void)
     Imu660raScaledData imu;
     DriveEncoderDelta encoder_delta;
     mecanum_duty_t duty;
+    calibration_yawx_sample_t yawx_sample;
     int32_t acc_x_mg;
     int32_t acc_y_mg;
     int32_t acc_z_mg;
@@ -480,6 +531,18 @@ static void comm_send_stream_frame(void)
                            (long)gyro_y_x10,
                            (long)gyro_z_x10,
                            (long)yaw_x10);
+        }
+    }
+    else if(comm_stream_mode == COMM_STREAM_IMU_YAWX)
+    {
+        if(comm_read_imu_scaled(&imu, NULL, NULL, NULL, &gyro_x_x10, NULL, NULL, &yaw_x10) == AI_OK)
+        {
+            if(calibration_yawx_sample(&comm_cal_yawx, gyro_x_x10, yaw_x10, &yawx_sample) == AI_OK)
+            {
+                comm_send_line("DATA imu_yawx gx_x10=%ld yawx_x10=%ld",
+                               (long)yawx_sample.gx_x10,
+                               (long)yawx_sample.yawx_x10);
+            }
         }
     }
     else if(comm_stream_mode == COMM_STREAM_ENC5)
@@ -534,6 +597,10 @@ static void comm_handle_stream_command(char *mode)
     {
         comm_stream_mode = COMM_STREAM_IMU_GYRO;
     }
+    else if(strcmp(mode, "imu_yawx") == 0)
+    {
+        comm_stream_mode = COMM_STREAM_IMU_YAWX;
+    }
     else if(strcmp(mode, "enc5") == 0)
     {
         comm_stream_mode = COMM_STREAM_ENC5;
@@ -578,7 +645,23 @@ static void comm_handle_imu_command(char *sub_command)
     if(strcmp(sub_command, "zero") == 0)
     {
         Imu660raResetYaw();
+        calibration_yawx_zero(&comm_cal_yawx, 0);
         comm_send_line("OK imu zero");
+    }
+    else if(strcmp(sub_command, "yawx") == 0)
+    {
+        char *yawx_command = strtok(NULL, " ");
+
+        if((yawx_command != NULL) && (strcmp(yawx_command, "zero") == 0))
+        {
+            Imu660raResetYaw();
+            calibration_yawx_zero(&comm_cal_yawx, 0);
+            comm_send_line("OK imu yawx zero");
+        }
+        else
+        {
+            comm_send_line("ERR imu yawx usage");
+        }
     }
     else if(strcmp(sub_command, "stat") == 0)
     {
@@ -601,6 +684,132 @@ static void comm_handle_imu_command(char *sub_command)
     else
     {
         comm_send_line("ERR imu bad_command=%s", sub_command);
+    }
+}
+
+static void comm_handle_cal_enc_command(char *enc_command)
+{
+    calibration_wheel_counts_t counts;
+    calibration_wheel_counts_t delta;
+    calibration_encoder_turn_result_t result;
+    char *wheel_text;
+    char *turns_text;
+    int32_t wheel_id;
+    int32_t turns;
+
+    if(enc_command == NULL)
+    {
+        comm_send_line("ERR cal enc usage");
+        return;
+    }
+
+    if(strcmp(enc_command, "zero") == 0)
+    {
+        if(comm_read_encoder_counts(&counts) != AI_OK)
+        {
+            comm_send_line("ERR cal enc no_data");
+            return;
+        }
+
+        calibration_encoder_reset_baseline(&comm_cal_encoder, &counts);
+        comm_send_line("OK cal enc zero w1=%ld w2=%ld w3=%ld w4=%ld",
+                       (long)counts.wheel1,
+                       (long)counts.wheel2,
+                       (long)counts.wheel3,
+                       (long)counts.wheel4);
+    }
+    else if(strcmp(enc_command, "total") == 0)
+    {
+        if(comm_read_encoder_counts(&counts) != AI_OK)
+        {
+            comm_send_line("ERR cal enc no_data");
+            return;
+        }
+
+        comm_send_encoder_counts("cal_enc_total", &counts);
+    }
+    else if(strcmp(enc_command, "delta") == 0)
+    {
+        if(comm_read_encoder_counts(&counts) != AI_OK)
+        {
+            comm_send_line("ERR cal enc no_data");
+            return;
+        }
+
+        if(calibration_encoder_delta(&comm_cal_encoder, &counts, &delta) != AI_OK)
+        {
+            comm_send_line("ERR cal enc no_data");
+            return;
+        }
+
+        comm_send_encoder_counts("cal_enc_delta", &delta);
+    }
+    else if(strcmp(enc_command, "wheel") == 0)
+    {
+        wheel_text = strtok(NULL, " ");
+        turns_text = strtok(NULL, " ");
+
+        if(comm_parse_i32(wheel_text, &wheel_id) != AI_OK)
+        {
+            comm_send_line("ERR cal enc bad_wheel");
+            return;
+        }
+
+        if((wheel_id < 1) || (wheel_id > 4))
+        {
+            comm_send_line("ERR cal enc bad_wheel");
+            return;
+        }
+
+        if((comm_parse_i32(turns_text, &turns) != AI_OK) || (turns <= 0))
+        {
+            comm_send_line("ERR cal enc bad_turns");
+            return;
+        }
+
+        if(comm_read_encoder_counts(&counts) != AI_OK)
+        {
+            comm_send_line("ERR cal enc no_data");
+            return;
+        }
+
+        if(calibration_encoder_counts_per_rev(&comm_cal_encoder,
+                                              &counts,
+                                              (uint8_t)wheel_id,
+                                              (uint32_t)turns,
+                                              &result) != AI_OK)
+        {
+            comm_send_line("ERR cal enc bad_arg");
+            return;
+        }
+
+        comm_send_line("OK cal enc wheel=%ld counts=%ld turns=%lu counts_per_rev_x100=%ld",
+                       (long)wheel_id,
+                       (long)result.counts,
+                       (unsigned long)result.turns,
+                       (long)result.counts_per_rev_x100);
+    }
+    else
+    {
+        comm_send_line("ERR cal enc usage");
+    }
+}
+
+static void comm_handle_cal_command(char *sub_command)
+{
+    if(sub_command == NULL)
+    {
+        comm_send_line("ERR cal usage");
+        return;
+    }
+
+    if(strcmp(sub_command, "enc") == 0)
+    {
+        comm_handle_cal_enc_command(strtok(NULL, " "));
+    }
+    else
+    {
+        comm_send_line("ERR cal usage");
     }
 }
 
@@ -1093,6 +1302,10 @@ static void comm_handle_line(char *line)
     {
         comm_handle_imu_command(strtok(NULL, " "));
     }
+    else if(strcmp(command, "cal") == 0)
+    {
+        comm_handle_cal_command(strtok(NULL, " "));
+    }
     else if(strcmp(command, "motor") == 0)
     {
         comm_handle_motor_command(strtok(NULL, " "));
@@ -1207,6 +1420,7 @@ static void comm_update_ready_report(void)
 ai_status_t comm_module_init(void)
 {
     DriveEncoderTotal total;
+    calibration_wheel_counts_t counts;
 
     comm_line_length = 0;
     comm_line_idle_ms = 0;
@@ -1229,11 +1443,16 @@ ai_status_t comm_module_init(void)
     }
     else
     {
-        comm_enc100_last_total.wheel1 = 0;
-        comm_enc100_last_total.wheel2 = 0;
-        comm_enc100_last_total.wheel3 = 0;
-        comm_enc100_last_total.wheel4 = 0;
+        total.wheel1 = 0;
+        total.wheel2 = 0;
+        total.wheel3 = 0;
+        total.wheel4 = 0;
+        comm_enc100_last_total = total;
     }
+
+    comm_encoder_total_to_counts(&total, &counts);
+    calibration_encoder_reset_baseline(&comm_cal_encoder, &counts);
+    calibration_yawx_zero(&comm_cal_yawx, 0);
 
     comm_send_line("OK open_loop_test ready uart=UART1 baud=115200, type help, send arm before motor/move");
 

@@ -160,7 +160,7 @@ void Imu660raPitHandler(void)
     imu660raRawData.gyroX = imu660ra_gyro_x;
     imu660raRawData.gyroY = imu660ra_gyro_y;
     imu660raRawData.gyroZ = imu660ra_gyro_z;
-    imu660raYawDeg += imu660ra_gyro_transition(imu660raRawData.gyroZ) *
-                      IMU660RA_YAW_AXIS_SIGN *
+    imu660raYawDeg += imu660ra_gyro_transition(imu660raRawData.gyroX) *
+                      IMU660RA_BODY_YAW_AXIS_SIGN *
                       ((float)IMU660RA_SAMPLE_PERIOD_MS / 1000.0f);
 }
