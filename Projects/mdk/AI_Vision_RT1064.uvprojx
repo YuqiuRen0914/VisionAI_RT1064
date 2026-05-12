@@ -412,6 +412,12 @@
             <File><FileName>motion.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion.c</FilePath></File>
             <File><FileName>motion.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion.h</FilePath></File>
             <File><FileName>motion_config.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_config.h</FilePath></File>
+            <File><FileName>motion_action.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion_action.c</FilePath></File>
+            <File><FileName>motion_action.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_action.h</FilePath></File>
+            <File><FileName>motion_action_runtime.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion_action_runtime.c</FilePath></File>
+            <File><FileName>motion_action_runtime.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_action_runtime.h</FilePath></File>
+            <File><FileName>motion_defaults.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion_defaults.c</FilePath></File>
+            <File><FileName>motion_defaults.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_defaults.h</FilePath></File>
             <File><FileName>motion_speed.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion_speed.c</FilePath></File>
             <File><FileName>motion_speed.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_speed.h</FilePath></File>
             <File><FileName>mecanum.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\mecanum.c</FilePath></File>
@@ -420,6 +426,16 @@
             <File><FileName>calibration_telemetry.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\calibration\calibration_telemetry.h</FilePath></File>
             <File><FileName>comm.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm.c</FilePath></File>
             <File><FileName>comm.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm.h</FilePath></File>
+            <File><FileName>comm_calibration_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_calibration_debug.c</FilePath></File>
+            <File><FileName>comm_calibration_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_calibration_debug.h</FilePath></File>
+            <File><FileName>comm_motion_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_motion_debug.c</FilePath></File>
+            <File><FileName>comm_motion_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_motion_debug.h</FilePath></File>
+            <File><FileName>comm_speed_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_speed_debug.c</FilePath></File>
+            <File><FileName>comm_speed_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_speed_debug.h</FilePath></File>
+            <File><FileName>comm_telemetry_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_telemetry_debug.c</FilePath></File>
+            <File><FileName>comm_telemetry_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_telemetry_debug.h</FilePath></File>
+            <File><FileName>comm_vision_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_vision_debug.c</FilePath></File>
+            <File><FileName>comm_vision_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_vision_debug.h</FilePath></File>
             <File><FileName>interact.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\interact.c</FilePath></File>
             <File><FileName>interact.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\interact.h</FilePath></File>
           </Files>

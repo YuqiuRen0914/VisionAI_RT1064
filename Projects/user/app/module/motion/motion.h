@@ -5,6 +5,8 @@
 
 #include "ai_error.h"
 #include "mecanum.h"
+#include "motion_action.h"
+#include "motion_action_runtime.h"
 #include "motion_speed.h"
 
 typedef enum
@@ -49,5 +51,7 @@ void motion_speed_bench_get_sample(motion_speed_sample_t *sample);
 ai_status_t motion_action_begin(uint8_t cmd, uint8_t dir, uint8_t val);
 void motion_action_stop_all(void);
 void motion_action_reset(void);
+uint8_t motion_action_take_result(motion_action_result_t *result);
+void motion_get_action_debug(motion_action_debug_t *debug);
 
 #endif

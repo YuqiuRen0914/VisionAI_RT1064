@@ -4,7 +4,7 @@
 #include "drive.h"
 #include "drive_config.h"
 #include "imu660ra.h"
-#include "motion_config.h"
+#include "motion_defaults.h"
 #include "os_port.h"
 #include "zf_common_interrupt.h"
 
@@ -147,21 +147,7 @@ static void motion_stop_drive(void)
 
 static void motion_load_speed_defaults(void)
 {
-    motion_speed_default_config(&motion_speed_config);
-    motion_speed_config.kp = MOTION_SPEED_KP_DEFAULT;
-    motion_speed_config.ki = MOTION_SPEED_KI_DEFAULT;
-    motion_speed_config.kd = MOTION_SPEED_KD_DEFAULT;
-    motion_speed_config.duty_limit_percent = MOTION_CLOSED_LOOP_DUTY_LIMIT_PERCENT;
-    motion_speed_config.max_speed_mm_s = MOTION_CLOSED_LOOP_MAX_SPEED_MM_S;
-    motion_speed_config.feedforward_duty_per_mm_s = MOTION_SPEED_FEEDFORWARD_DEFAULT;
-    motion_speed_config.static_duty_percent = MOTION_SPEED_STATIC_DUTY_DEFAULT;
-    motion_speed_config.static_threshold_mm_s = MOTION_SPEED_STATIC_THRESHOLD_MM_S;
-    motion_speed_config.speed_filter_tau_ms = MOTION_SPEED_FILTER_TAU_MS_DEFAULT;
-    motion_speed_config.wheel_diameter_mm = (float)DRIVE_WHEEL_DIAMETER_MM;
-    motion_speed_config.counts_per_rev_x100[0] = DRIVE_WHEEL1_COUNTS_PER_REV_X100;
-    motion_speed_config.counts_per_rev_x100[1] = DRIVE_WHEEL2_COUNTS_PER_REV_X100;
-    motion_speed_config.counts_per_rev_x100[2] = DRIVE_WHEEL3_COUNTS_PER_REV_X100;
-    motion_speed_config.counts_per_rev_x100[3] = DRIVE_WHEEL4_COUNTS_PER_REV_X100;
+    motion_defaults_load_speed_config(&motion_speed_config);
 }
 
 static void motion_drive_total_to_speed_total(const DriveEncoderTotal *drive_total,
@@ -266,6 +252,11 @@ ai_status_t motion_module_init(void)
         return AI_ERR;
     }
 
+    if(motion_action_runtime_init(motion_apply_duty) != AI_OK)
+    {
+        return AI_ERR;
+    }
+
     return Imu660raInit();
 }
 
@@ -278,6 +269,10 @@ void motion_module_tick(void)
     else if(motion_mode == MOTION_MODE_SPEED_BENCH)
     {
         motion_speed_bench_tick();
+    }
+    else
+    {
+        motion_action_runtime_tick();
     }
 }
 
@@ -634,33 +629,46 @@ void motion_speed_bench_get_sample(motion_speed_sample_t *sample)
         return;
     }
 
-    *sample = motion_speed_last_sample;
+    if(motion_mode == MOTION_MODE_ACTION_CLOSED_LOOP)
+    {
+        motion_action_runtime_get_speed_sample(sample);
+    }
+    else
+    {
+        *sample = motion_speed_last_sample;
+    }
 }
 
 ai_status_t motion_action_begin(uint8_t cmd, uint8_t dir, uint8_t val)
 {
-    (void)cmd;
-    (void)dir;
-    (void)val;
-
     if(motion_mode != MOTION_MODE_ACTION_CLOSED_LOOP)
     {
         return AI_ERR_BUSY;
     }
 
-    motion_stop_drive();
     motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
-    return AI_OK;
+    return motion_action_runtime_begin(cmd, dir, val);
 }
 
 void motion_action_stop_all(void)
 {
     motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
     motion_test_armed = 0U;
+    motion_action_runtime_stop_all();
     motion_stop_drive();
 }
 
 void motion_action_reset(void)
 {
     motion_action_stop_all();
+}
+
+uint8_t motion_action_take_result(motion_action_result_t *result)
+{
+    return motion_action_runtime_take_result(result);
+}
+
+void motion_get_action_debug(motion_action_debug_t *debug)
+{
+    motion_action_runtime_get_debug(debug);
 }

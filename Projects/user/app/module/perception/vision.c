@@ -84,7 +84,11 @@ static void vision_record_response(const action_controller_response_t *response)
     {
         vision_debug.busy_errors++;
     }
-    else if(response->dir == VISION_PROTOCOL_ERROR_MOTOR_FAULT)
+    else if((response->dir == VISION_PROTOCOL_ERROR_MOTOR_FAULT) ||
+            (response->dir == VISION_PROTOCOL_ERROR_OBSTRUCTED) ||
+            (response->dir == VISION_PROTOCOL_ERROR_TIMEOUT) ||
+            (response->dir == VISION_PROTOCOL_ERROR_SENSOR_INVALID) ||
+            (response->dir == VISION_PROTOCOL_ERROR_CONTROL_UNSTABLE))
     {
         vision_debug.motion_errors++;
     }
@@ -105,14 +109,28 @@ static void vision_apply_motion_event(const action_controller_result_t *result)
 {
     action_controller_result_t error_result;
     ai_status_t status;
+    uint8_t error;
 
     if(result->motion_event == ACTION_CONTROLLER_MOTION_START)
     {
         status = motion_action_begin(result->action.cmd, result->action.dir, result->action.val);
         if(status != AI_OK)
         {
+            if(status == AI_ERR_NO_DATA)
+            {
+                error = VISION_PROTOCOL_ERROR_SENSOR_INVALID;
+            }
+            else if(status == AI_ERR_INVALID_ARG)
+            {
+                error = VISION_PROTOCOL_ERROR_BAD_CMD;
+            }
+            else
+            {
+                error = VISION_PROTOCOL_ERROR_BUSY;
+            }
+
             error_result = action_controller_complete_error(&vision_action_controller,
-                                                            VISION_PROTOCOL_ERROR_BUSY,
+                                                            error,
                                                             (uint8_t)status);
             vision_send_response(&error_result.response);
         }
@@ -141,6 +159,35 @@ static void vision_dispatch_result(const action_controller_result_t *result)
 
     vision_apply_motion_event(result);
     vision_send_response(&result->response);
+}
+
+static void vision_poll_motion_result(void)
+{
+    motion_action_result_t motion_result;
+    action_controller_result_t action_result;
+
+    if(motion_action_take_result(&motion_result) == 0U)
+    {
+        return;
+    }
+
+    if(motion_result.kind == MOTION_ACTION_RESULT_DONE)
+    {
+        action_result = action_controller_complete_done(&vision_action_controller,
+                                                        motion_result.elapsed_ms);
+    }
+    else if(motion_result.kind == MOTION_ACTION_RESULT_ERROR)
+    {
+        action_result = action_controller_complete_error(&vision_action_controller,
+                                                         motion_result.error,
+                                                         motion_result.context);
+    }
+    else
+    {
+        return;
+    }
+
+    vision_send_response(&action_result.response);
 }
 
 static void vision_handle_protocol_frame(const vision_protocol_frame_t *frame)
@@ -177,6 +224,7 @@ ai_status_t vision_module_init(void)
 void vision_module_tick(void)
 {
     vision_protocol_tick();
+    vision_poll_motion_result();
 }
 
 void vision_debug_get(vision_debug_t *debug)

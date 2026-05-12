@@ -40,6 +40,10 @@ _Avoid_: camera closed loop
 The local controller that executes one discrete action using encoder-derived chassis displacement, IMU short-horizon heading, speed control, motion profiling, completion checks, and fault detection.
 _Avoid_: fixed-time runner, open-loop action player
 
+**Closed-loop action runtime**:
+The lower-controller runtime Module that owns hardware sampling, the wheel-speed PI loop instance, action result handoff, duty application, and debug snapshots while an **Odometry action controller** executes one **Discrete action**.
+_Avoid_: mixing action runtime ownership into debug modes, treating the pure action controller as the hardware owner
+
 **Single-action local odometry**:
 The encoder-derived displacement estimate reset at the start of one discrete action and discarded after `DONE` or `ERROR`.
 _Avoid_: global pose, long-term localization
@@ -107,6 +111,26 @@ _Avoid_: tuning blind, PID-first implementation
 **Debug text command layer**:
 The human-operated serial command interface in `comm.c` used for calibration, telemetry, and bench testing.
 _Avoid_: OPENART action protocol for calibration commands
+
+**Calibration debug command module**:
+The debug text command Module that owns `cal enc ...` controls for **Encoder distance calibration**, including encoder baseline state, delta reporting, wheel-turn validation, and fixed-point calibration output.
+_Avoid_: OPENART action protocol, hidden flash persistence, mixing encoder calibration state into action execution
+
+**Motion debug command module**:
+The debug text command Module that owns open-loop `arm`, `disarm`, `motor ...`, and `move ...` controls for the open-loop part of **Motion debug mode**.
+_Avoid_: closed-loop action execution, speed-loop bench tuning, OPENART action protocol
+
+**Telemetry debug command module**:
+The debug text command Module that owns `stream ...` and `imu ...` controls for **Calibration telemetry mode**, including stream state, IMU stat windows, and periodic telemetry formatting.
+_Avoid_: OPENART action protocol, mixing telemetry stream state into action execution
+
+**Speed debug command module**:
+The debug text command Module that exposes `speed ...` controls for **Speed-loop bench mode** and **Temporary tuning override** without owning the motion control loop.
+_Avoid_: OPENART speed command, competition action protocol
+
+**Vision debug command module**:
+The debug text command Module that exposes human-operated `vision`, `vision clear`, and `vision sim ...` commands for inspecting UART action state and injecting simulated vision frames during bench testing.
+_Avoid_: putting vision simulation parsing in the motion runtime, treating debug injection as an upper-controller protocol feature
 
 **Speed-loop bench mode**:
 The human-operated debug mode that commands wheel-speed targets and streams target speed, raw and filtered measured speed, duty, encoder delta, and control dt before closed-loop actions use the speed loop.
@@ -201,6 +225,12 @@ _Avoid_: assuming CCW-positive math yaw
 - UART `RESET` performs **Protocol reset**, returning the lower controller to `IDLE` without hardware reboot.
 - The **Lower controller** consumes **Discrete actions** and executes them with **Local closed loop** control.
 - **Local closed loop** uses encoders for wheel motion feedback and the IMU **Body yaw axis** for rotation feedback.
+- The **Closed-loop action runtime** feeds hardware observations into the **Odometry action controller**, applies wheel-speed PI duty output, and hands final action results back to the UART action state machine.
+- The **Calibration debug command module** belongs to the **Debug text command layer** and operates **Encoder distance calibration**, not the OPENART binary action protocol.
+- The **Motion debug command module** belongs to the **Debug text command layer** and operates the open-loop side of **Motion debug mode**, not closed-loop action execution.
+- The **Telemetry debug command module** belongs to the **Debug text command layer** and operates **Calibration telemetry mode**, not the OPENART binary action protocol.
+- The **Speed debug command module** belongs to the **Debug text command layer** and operates **Speed-loop bench mode**, not the OPENART binary action protocol.
+- The **Vision debug command module** belongs to the **Debug text command layer** and may inject simulated vision frames for bench testing without changing the OPENART binary action protocol.
 - **Discrete actions** encode `MOVE` distance in centimeters, but **Local closed loop** converts that value to the **Local motion unit** before planning or control.
 - **Local closed loop** derives **Wheel-speed observation** from accumulated encoder totals and uses **Filtered wheel-speed estimate** as the wheel-speed PI control measurement.
 - **Local closed loop** uses a **Wheel-speed PI loop** as the first-version inner loop for each wheel.
