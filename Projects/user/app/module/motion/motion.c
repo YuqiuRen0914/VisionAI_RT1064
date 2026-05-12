@@ -159,6 +159,56 @@ static void motion_drive_total_to_speed_total(const DriveEncoderTotal *drive_tot
     speed_total->wheel4 = drive_total->wheel4;
 }
 
+static ai_status_t motion_action_runtime_read_observation(motion_action_runtime_observation_t *observation)
+{
+    DriveEncoderTotal drive_total;
+    Imu660raScaledData imu;
+
+    if(observation == 0)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if((DriveGetAllEncoderTotal(&drive_total) != DRIVE_STATUS_OK) ||
+       (Imu660raGetScaled(&imu) != AI_OK))
+    {
+        return AI_ERR_NO_DATA;
+    }
+
+    motion_drive_total_to_speed_total(&drive_total, &observation->encoder_total);
+    observation->imu_heading_deg = imu.yawDeg;
+    observation->imu_rate_dps = imu.gyroXDps;
+    return AI_OK;
+}
+
+static ai_status_t motion_action_runtime_read_heading(float *heading_deg)
+{
+    if(heading_deg == 0)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    return Imu660raGetYawDeg(heading_deg);
+}
+
+static uint32_t motion_action_runtime_now_ms(void)
+{
+    return os_port_now_ms();
+}
+
+static void motion_action_runtime_apply_duty_percent(const motion_speed_wheel_float_t *duty_percent)
+{
+    if(duty_percent == 0)
+    {
+        return;
+    }
+
+    motion_apply_duty(motion_float_to_duty(duty_percent->wheel1),
+                      motion_float_to_duty(duty_percent->wheel2),
+                      motion_float_to_duty(duty_percent->wheel3),
+                      motion_float_to_duty(duty_percent->wheel4));
+}
+
 static void motion_test_apply_locked(const mecanum_duty_t *duty, uint32_t run_ms)
 {
     uint32_t primask = interrupt_global_disable();
@@ -230,6 +280,12 @@ static void motion_speed_bench_tick(void)
 
 ai_status_t motion_module_init(void)
 {
+    const motion_action_runtime_adapter_t action_runtime_adapter = {
+        motion_action_runtime_read_observation,
+        motion_action_runtime_read_heading,
+        motion_action_runtime_now_ms,
+        motion_action_runtime_apply_duty_percent
+    };
     ai_status_t status;
 
     motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
@@ -252,7 +308,7 @@ ai_status_t motion_module_init(void)
         return AI_ERR;
     }
 
-    if(motion_action_runtime_init(motion_apply_duty) != AI_OK)
+    if(motion_action_runtime_init(&action_runtime_adapter) != AI_OK)
     {
         return AI_ERR;
     }

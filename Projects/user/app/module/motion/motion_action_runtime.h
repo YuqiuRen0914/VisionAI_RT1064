@@ -22,12 +22,27 @@ typedef struct
     uint32_t elapsed_ms;
 } motion_action_result_t;
 
-typedef void (*motion_action_runtime_apply_duty_t)(int16_t wheel1,
-                                                   int16_t wheel2,
-                                                   int16_t wheel3,
-                                                   int16_t wheel4);
+typedef struct
+{
+    motion_speed_encoder_total_t encoder_total;
+    float imu_heading_deg;
+    float imu_rate_dps;
+} motion_action_runtime_observation_t;
 
-ai_status_t motion_action_runtime_init(motion_action_runtime_apply_duty_t apply_duty);
+typedef ai_status_t (*motion_action_runtime_read_observation_t)(motion_action_runtime_observation_t *observation);
+typedef ai_status_t (*motion_action_runtime_read_heading_t)(float *heading_deg);
+typedef uint32_t (*motion_action_runtime_now_ms_t)(void);
+typedef void (*motion_action_runtime_apply_duty_t)(const motion_speed_wheel_float_t *duty_percent);
+
+typedef struct
+{
+    motion_action_runtime_read_observation_t read_observation;
+    motion_action_runtime_read_heading_t read_heading_deg;
+    motion_action_runtime_now_ms_t now_ms;
+    motion_action_runtime_apply_duty_t apply_duty;
+} motion_action_runtime_adapter_t;
+
+ai_status_t motion_action_runtime_init(const motion_action_runtime_adapter_t *adapter);
 void motion_action_runtime_tick(void);
 ai_status_t motion_action_runtime_begin(uint8_t cmd, uint8_t dir, uint8_t val);
 void motion_action_runtime_stop_all(void);

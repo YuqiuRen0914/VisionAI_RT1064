@@ -1,11 +1,7 @@
 #include "motion_action_runtime.h"
 
 #include "ai_config.h"
-#include "drive.h"
-#include "drive_config.h"
-#include "imu660ra.h"
 #include "motion_defaults.h"
-#include "os_port.h"
 #include "zf_common_interrupt.h"
 
 static motion_action_controller_t motion_action_runtime_controller;
@@ -16,7 +12,7 @@ static motion_speed_wheel_float_t motion_action_runtime_speed_targets;
 static motion_speed_sample_t motion_action_runtime_speed_sample;
 static motion_action_result_t motion_action_runtime_pending_result;
 static motion_action_debug_t motion_action_runtime_latest_debug;
-static motion_action_runtime_apply_duty_t motion_action_runtime_apply_duty;
+static motion_action_runtime_adapter_t motion_action_runtime_adapter;
 
 static void motion_action_runtime_zero_speed_targets(void)
 {
@@ -80,51 +76,22 @@ static void motion_action_runtime_zero_debug(motion_action_debug_t *debug)
     debug->blocked_ms = 0U;
 }
 
-static int16_t motion_action_runtime_float_to_duty(float duty_percent)
-{
-    int32_t rounded;
-
-    if(duty_percent >= 0.0f)
-    {
-        rounded = (int32_t)(duty_percent + 0.5f);
-    }
-    else
-    {
-        rounded = (int32_t)(duty_percent - 0.5f);
-    }
-
-    if(rounded > DRIVE_DUTY_PERCENT_MAX)
-    {
-        return DRIVE_DUTY_PERCENT_MAX;
-    }
-
-    if(rounded < -DRIVE_DUTY_PERCENT_MAX)
-    {
-        return (int16_t)-DRIVE_DUTY_PERCENT_MAX;
-    }
-
-    return (int16_t)rounded;
-}
-
 static void motion_action_runtime_apply_zero_duty(void)
 {
-    if(motion_action_runtime_apply_duty != 0)
+    motion_speed_wheel_float_t duty = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    if(motion_action_runtime_adapter.apply_duty != 0)
     {
-        motion_action_runtime_apply_duty(0, 0, 0, 0);
+        motion_action_runtime_adapter.apply_duty(&duty);
     }
 }
 
 static void motion_action_runtime_apply_sample_duty(const motion_speed_sample_t *sample)
 {
-    if(motion_action_runtime_apply_duty == 0)
+    if(motion_action_runtime_adapter.apply_duty != 0)
     {
-        return;
+        motion_action_runtime_adapter.apply_duty(&sample->duty_percent);
     }
-
-    motion_action_runtime_apply_duty(motion_action_runtime_float_to_duty(sample->duty_percent.wheel1),
-                                     motion_action_runtime_float_to_duty(sample->duty_percent.wheel2),
-                                     motion_action_runtime_float_to_duty(sample->duty_percent.wheel3),
-                                     motion_action_runtime_float_to_duty(sample->duty_percent.wheel4));
 }
 
 static void motion_action_runtime_stop_drive(void)
@@ -164,15 +131,6 @@ static void motion_action_runtime_store_result(uint8_t kind,
     interrupt_global_enable(primask);
 }
 
-static void motion_action_runtime_drive_total_to_speed_total(const DriveEncoderTotal *drive_total,
-                                                            motion_speed_encoder_total_t *speed_total)
-{
-    speed_total->wheel1 = drive_total->wheel1;
-    speed_total->wheel2 = drive_total->wheel2;
-    speed_total->wheel3 = drive_total->wheel3;
-    speed_total->wheel4 = drive_total->wheel4;
-}
-
 static void motion_action_runtime_feedback_sensor_invalid(motion_action_feedback_t *feedback)
 {
     motion_action_zero_feedback(feedback);
@@ -181,14 +139,14 @@ static void motion_action_runtime_feedback_sensor_invalid(motion_action_feedback
 }
 
 static void motion_action_runtime_fill_feedback(const motion_speed_sample_t *speed_sample,
-                                                const Imu660raScaledData *imu,
+                                                const motion_action_runtime_observation_t *observation,
                                                 motion_action_feedback_t *feedback)
 {
     motion_action_zero_feedback(feedback);
     feedback->encoder_delta = speed_sample->encoder_delta;
     feedback->measured_mm_s = speed_sample->measured_mm_s;
-    feedback->imu_heading_deg = imu->yawDeg;
-    feedback->imu_rate_dps = imu->gyroXDps;
+    feedback->imu_heading_deg = observation->imu_heading_deg;
+    feedback->imu_rate_dps = observation->imu_rate_dps;
     feedback->dt_ms = speed_sample->dt_ms;
     feedback->sensors_valid = 1U;
 }
@@ -223,9 +181,28 @@ static void motion_action_runtime_handle_output(const motion_action_output_t *ou
     }
 }
 
-ai_status_t motion_action_runtime_init(motion_action_runtime_apply_duty_t apply_duty)
+static ai_status_t motion_action_runtime_validate_adapter(const motion_action_runtime_adapter_t *adapter)
 {
-    motion_action_runtime_apply_duty = apply_duty;
+    if((adapter == 0) ||
+       (adapter->read_observation == 0) ||
+       (adapter->read_heading_deg == 0) ||
+       (adapter->now_ms == 0) ||
+       (adapter->apply_duty == 0))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    return AI_OK;
+}
+
+ai_status_t motion_action_runtime_init(const motion_action_runtime_adapter_t *adapter)
+{
+    if(motion_action_runtime_validate_adapter(adapter) != AI_OK)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_action_runtime_adapter = *adapter;
     motion_defaults_load_speed_config(&motion_action_runtime_speed_config);
     motion_defaults_load_action_config(&motion_action_runtime_config);
     motion_action_runtime_zero_speed_targets();
@@ -248,9 +225,7 @@ ai_status_t motion_action_runtime_init(motion_action_runtime_apply_duty_t apply_
 
 void motion_action_runtime_tick(void)
 {
-    DriveEncoderTotal drive_total;
-    Imu660raScaledData imu;
-    motion_speed_encoder_total_t speed_total;
+    motion_action_runtime_observation_t observation;
     motion_action_feedback_t feedback;
     motion_action_output_t output;
     ai_status_t action_status;
@@ -262,8 +237,7 @@ void motion_action_runtime_tick(void)
         return;
     }
 
-    if((DriveGetAllEncoderTotal(&drive_total) != DRIVE_STATUS_OK) ||
-       (Imu660raGetScaled(&imu) != AI_OK))
+    if(motion_action_runtime_adapter.read_observation(&observation) != AI_OK)
     {
         motion_action_runtime_feedback_sensor_invalid(&feedback);
         action_status = motion_action_update(&motion_action_runtime_controller, &feedback, &output);
@@ -274,10 +248,9 @@ void motion_action_runtime_tick(void)
         return;
     }
 
-    motion_action_runtime_drive_total_to_speed_total(&drive_total, &speed_total);
-    now_ms = os_port_now_ms();
+    now_ms = motion_action_runtime_adapter.now_ms();
     speed_status = motion_speed_update(&motion_action_runtime_speed_controller,
-                                       &speed_total,
+                                       &observation.encoder_total,
                                        now_ms,
                                        &motion_action_runtime_speed_sample);
 
@@ -297,7 +270,7 @@ void motion_action_runtime_tick(void)
         return;
     }
 
-    motion_action_runtime_fill_feedback(&motion_action_runtime_speed_sample, &imu, &feedback);
+    motion_action_runtime_fill_feedback(&motion_action_runtime_speed_sample, &observation, &feedback);
     action_status = motion_action_update(&motion_action_runtime_controller, &feedback, &output);
     if(action_status != AI_OK)
     {
@@ -323,7 +296,7 @@ ai_status_t motion_action_runtime_begin(uint8_t cmd, uint8_t dir, uint8_t val)
         return AI_ERR_BUSY;
     }
 
-    if(Imu660raGetYawDeg(&start_heading_deg) != AI_OK)
+    if(motion_action_runtime_adapter.read_heading_deg(&start_heading_deg) != AI_OK)
     {
         return AI_ERR_NO_DATA;
     }

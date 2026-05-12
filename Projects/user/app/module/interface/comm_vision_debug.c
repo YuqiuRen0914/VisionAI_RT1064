@@ -1,89 +1,14 @@
 #include "comm_vision_debug.h"
 
-#include <stdarg.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "ai_error.h"
+#include "comm_debug.h"
 #include "vision.h"
 #include "vision_protocol.h"
 
-#define COMM_VISION_DEBUG_RESPONSE_BUFFER_SIZE (384U)
-
 static uint8_t comm_vision_debug_sim_seq;
-
-static void comm_vision_debug_send_line(comm_vision_debug_write_line_t write_line,
-                                        const char *format,
-                                        ...)
-{
-    char buffer[COMM_VISION_DEBUG_RESPONSE_BUFFER_SIZE];
-    va_list args;
-    int length;
-
-    if(write_line == 0)
-    {
-        return;
-    }
-
-    va_start(args, format);
-    length = vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-
-    if(length < 0)
-    {
-        return;
-    }
-
-    if((uint32_t)length >= sizeof(buffer))
-    {
-        length = (int)(sizeof(buffer) - 1U);
-        buffer[length] = '\0';
-    }
-
-    write_line(buffer);
-}
-
-static ai_status_t comm_vision_debug_parse_i32(const char *text, int32_t *value)
-{
-    char *end_ptr;
-    long parsed;
-
-    if((text == 0) || (value == 0) || (text[0] == '\0'))
-    {
-        return AI_ERR_INVALID_ARG;
-    }
-
-    parsed = strtol(text, &end_ptr, 10);
-    if((end_ptr == text) || (*end_ptr != '\0'))
-    {
-        return AI_ERR_INVALID_ARG;
-    }
-
-    *value = (int32_t)parsed;
-    return AI_OK;
-}
-
-static ai_status_t comm_vision_debug_parse_u8_auto(const char *text, uint8_t *value)
-{
-    char *end_ptr;
-    unsigned long parsed;
-
-    if((text == 0) || (value == 0) || (text[0] == '\0'))
-    {
-        return AI_ERR_INVALID_ARG;
-    }
-
-    parsed = strtoul(text, &end_ptr, 0);
-    if((end_ptr == text) || (*end_ptr != '\0') || (parsed > UINT8_MAX))
-    {
-        return AI_ERR_INVALID_ARG;
-    }
-
-    *value = (uint8_t)parsed;
-    return AI_OK;
-}
 
 static void comm_vision_debug_send_sim_result(comm_vision_debug_write_line_t write_line,
                                               ai_status_t status,
@@ -97,7 +22,7 @@ static void comm_vision_debug_send_sim_result(comm_vision_debug_write_line_t wri
             comm_vision_debug_sim_seq++;
         }
 
-        comm_vision_debug_send_line(write_line,
+        comm_debug_send_line(write_line,
                                     "OK vision sim %02X %02X %02X %02X %02X %02X %02X",
                                     (unsigned int)frame[0],
                                     (unsigned int)frame[1],
@@ -109,11 +34,11 @@ static void comm_vision_debug_send_sim_result(comm_vision_debug_write_line_t wri
     }
     else if(status == AI_ERR_BUSY)
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim busy");
+        comm_debug_send_line(write_line, "ERR vision sim busy");
     }
     else
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim bad_arg");
+        comm_debug_send_line(write_line, "ERR vision sim bad_arg");
     }
 }
 
@@ -145,7 +70,7 @@ static ai_status_t comm_vision_debug_get_sim_seq(char *seq_text, uint8_t *seq, u
         return AI_OK;
     }
 
-    if(comm_vision_debug_parse_u8_auto(seq_text, seq) != AI_OK)
+    if(comm_debug_parse_u8_auto(seq_text, seq) != AI_OK)
     {
         return AI_ERR_INVALID_ARG;
     }
@@ -212,7 +137,7 @@ static ai_status_t comm_vision_debug_parse_angle(const char *angle_text, uint8_t
 {
     int32_t angle;
 
-    if((val == 0) || (comm_vision_debug_parse_i32(angle_text, &angle) != AI_OK))
+    if((val == 0) || (comm_debug_parse_i32(angle_text, &angle) != AI_OK))
     {
         return AI_ERR_INVALID_ARG;
     }
@@ -246,12 +171,12 @@ static void comm_vision_debug_handle_sim_move(comm_vision_debug_write_line_t wri
     if((dir_text == 0) ||
        (cm_text == 0) ||
        (comm_vision_debug_parse_move_dir(dir_text, &dir) != AI_OK) ||
-       (comm_vision_debug_parse_i32(cm_text, &cm) != AI_OK) ||
+       (comm_debug_parse_i32(cm_text, &cm) != AI_OK) ||
        (cm <= 0) ||
        (cm > UINT8_MAX) ||
        (comm_vision_debug_get_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK))
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim bad_arg");
+        comm_debug_send_line(write_line, "ERR vision sim bad_arg");
         return;
     }
 
@@ -274,7 +199,7 @@ static void comm_vision_debug_handle_sim_rotate(comm_vision_debug_write_line_t w
        (comm_vision_debug_parse_angle(angle_text, &val) != AI_OK) ||
        (comm_vision_debug_get_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK))
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim bad_arg");
+        comm_debug_send_line(write_line, "ERR vision sim bad_arg");
         return;
     }
 
@@ -289,7 +214,7 @@ static void comm_vision_debug_handle_sim_simple(comm_vision_debug_write_line_t w
 
     if(comm_vision_debug_get_sim_seq(seq_text, &seq, &explicit_seq) != AI_OK)
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim bad_arg");
+        comm_debug_send_line(write_line, "ERR vision sim bad_arg");
         return;
     }
 
@@ -307,12 +232,12 @@ static void comm_vision_debug_handle_sim_raw(comm_vision_debug_write_line_t writ
     uint8_t dir;
     uint8_t val;
 
-    if((comm_vision_debug_parse_u8_auto(seq_text, &seq) != AI_OK) ||
-       (comm_vision_debug_parse_u8_auto(cmd_text, &cmd) != AI_OK) ||
-       (comm_vision_debug_parse_u8_auto(dir_text, &dir) != AI_OK) ||
-       (comm_vision_debug_parse_u8_auto(val_text, &val) != AI_OK))
+    if((comm_debug_parse_u8_auto(seq_text, &seq) != AI_OK) ||
+       (comm_debug_parse_u8_auto(cmd_text, &cmd) != AI_OK) ||
+       (comm_debug_parse_u8_auto(dir_text, &dir) != AI_OK) ||
+       (comm_debug_parse_u8_auto(val_text, &val) != AI_OK))
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim bad_arg");
+        comm_debug_send_line(write_line, "ERR vision sim bad_arg");
         return;
     }
 
@@ -325,7 +250,7 @@ static void comm_vision_debug_handle_sim_command(comm_vision_debug_write_line_t 
 
     if(sim_command == 0)
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim usage");
+        comm_debug_send_line(write_line, "ERR vision sim usage");
         return;
     }
 
@@ -355,7 +280,7 @@ static void comm_vision_debug_handle_sim_command(comm_vision_debug_write_line_t 
     }
     else
     {
-        comm_vision_debug_send_line(write_line, "ERR vision sim usage");
+        comm_debug_send_line(write_line, "ERR vision sim usage");
     }
 }
 
@@ -364,7 +289,7 @@ static void comm_vision_debug_send_status(comm_vision_debug_write_line_t write_l
     vision_debug_t debug;
 
     vision_debug_get(&debug);
-    comm_vision_debug_send_line(write_line,
+    comm_debug_send_line(write_line,
                                 "OK vision status=%u parser=%u active_seq=%u rx_bytes=%lu frames_ok=%lu bad_frame=%lu bad_cmd=%lu busy=%lu motion_err=%lu",
                                 (unsigned int)debug.status,
                                 (unsigned int)debug.parser_state,
@@ -375,7 +300,7 @@ static void comm_vision_debug_send_status(comm_vision_debug_write_line_t write_l
                                 (unsigned long)debug.bad_cmds,
                                 (unsigned long)debug.busy_errors,
                                 (unsigned long)debug.motion_errors);
-    comm_vision_debug_send_line(write_line,
+    comm_debug_send_line(write_line,
                                 "OK vision cmd move=%lu rotate=%lu stop=%lu query=%lu reset=%lu last=%02X %02X %02X %02X err=%02X:%02X:%02X ovf=%lu",
                                 (unsigned long)debug.move_cmds,
                                 (unsigned long)debug.rotate_cmds,
@@ -390,7 +315,7 @@ static void comm_vision_debug_send_status(comm_vision_debug_write_line_t write_l
                                 (unsigned int)debug.last_error,
                                 (unsigned int)debug.last_error_context,
                                 (unsigned long)debug.rx_overflows);
-    comm_vision_debug_send_line(write_line,
+    comm_debug_send_line(write_line,
                                 "DATA vision_rx count=%u %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
                                 (unsigned int)debug.last_rx_count,
                                 (unsigned int)debug.last_rx[0],
@@ -422,7 +347,7 @@ void comm_vision_debug_handle(char *sub_command, comm_vision_debug_write_line_t 
     if((sub_command != 0) && (strcmp(sub_command, "clear") == 0))
     {
         vision_debug_clear();
-        comm_vision_debug_send_line(write_line, "OK vision clear");
+        comm_debug_send_line(write_line, "OK vision clear");
         return;
     }
 

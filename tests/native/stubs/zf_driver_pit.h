@@ -1,0 +1,6 @@
+#ifndef TESTS_NATIVE_STUBS_ZF_DRIVER_PIT_H
+#define TESTS_NATIVE_STUBS_ZF_DRIVER_PIT_H
+
+#define PIT_CH0 0
+
+#endif
