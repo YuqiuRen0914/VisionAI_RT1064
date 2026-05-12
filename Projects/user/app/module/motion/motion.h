@@ -41,6 +41,9 @@ ai_status_t motion_speed_bench_set_all(float wheel1_mm_s,
                                        float wheel4_mm_s);
 ai_status_t motion_speed_bench_set_pid(float kp, float ki, float kd);
 ai_status_t motion_speed_bench_set_limits(float duty_limit_percent, float max_speed_mm_s);
+ai_status_t motion_speed_bench_set_static(float duty_percent, float threshold_mm_s);
+ai_status_t motion_speed_bench_set_feedforward(float duty_per_mm_s);
+ai_status_t motion_speed_bench_set_filter(float tau_ms);
 void motion_speed_bench_get_sample(motion_speed_sample_t *sample);
 
 ai_status_t motion_action_begin(uint8_t cmd, uint8_t dir, uint8_t val);

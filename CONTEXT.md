@@ -49,8 +49,12 @@ The lower-controller convention that local distance, displacement, and wheel-spe
 _Avoid_: centimeter control internals, raw encoder-count control units
 
 **Wheel-speed observation**:
-The measured wheel linear speed calculated in the motion tick from accumulated encoder total delta over elapsed control time.
-_Avoid_: latest 5 ms encoder sample as the control speed, raw count-per-tick speed
+The raw measured wheel linear speed calculated in the motion tick from accumulated encoder total delta over elapsed control time and retained for telemetry and diagnosis.
+_Avoid_: latest encoder interrupt sample, raw count-per-tick speed, filtered odometry distance
+
+**Filtered wheel-speed estimate**:
+The short-horizon control-facing wheel speed derived from **Wheel-speed observation** by light low-pass filtering before wheel-speed PI, start-boost exit, completion checks, and fault checks consume it.
+_Avoid_: raw speed as PI input, filtering encoder position, hiding raw telemetry
 
 **Wheel-speed PI loop**:
 The first-version per-wheel speed controller that uses floating-point PI control, clears integral on explicit stop, reserves derivative and feedforward fields, and leaves static-friction compensation disabled by default.
@@ -105,8 +109,20 @@ The human-operated serial command interface in `comm.c` used for calibration, te
 _Avoid_: OPENART action protocol for calibration commands
 
 **Speed-loop bench mode**:
-The human-operated debug mode that commands wheel-speed targets and streams target speed, measured speed, duty, encoder delta, and control dt before closed-loop actions use the speed loop.
+The human-operated debug mode that commands wheel-speed targets and streams target speed, raw and filtered measured speed, duty, encoder delta, and control dt before closed-loop actions use the speed loop.
 _Avoid_: OPENART speed command, direct competition action execution
+
+**First-stage speed-loop acceptance**:
+The bench acceptance standard that treats `±100 mm/s` and `±200 mm/s` as the main wheel-speed response checks, while `50 mm/s` only needs reliable start from rest and may remain visibly noisy until a later low-speed refinement pass.
+_Avoid_: blocking action-controller work on low-speed smoothness, treating static-friction start failure as PI failure
+
+**Wheel-speed tuning sequence**:
+The bench workflow that validates each wheel independently before validating all-wheel commands, so direction, deadband, encoder sign, and per-wheel response problems are isolated before they can hide inside chassis-level behavior.
+_Avoid_: tuning all four wheels first, diagnosing chassis motion before wheel-level response
+
+**First-stage speed response standard**:
+The coarse bench judgment for wheel-speed tuning that requires stable control dt, correct measured-speed sign, target-direction majority samples, roughly target-sized mean speed, no sustained duty-limit saturation, and clean return to zero after stop.
+_Avoid_: per-sample precision, strict low-speed RMS targets, treating encoder quantization noise as physical speed oscillation
 
 **Motion debug mode**:
 The explicit human-selected mode for open-loop duty tests or speed-loop bench tests that must not run concurrently with closed-loop action execution.
@@ -119,6 +135,30 @@ _Avoid_: automatic flash save, runtime persistent calibration
 **Temporary tuning override**:
 The debug text command workflow where closed-loop floating-point gains and limits can be changed at runtime for bench testing, but reset to compile-time defaults after reboot.
 _Avoid_: flash persistence, hidden permanent tuning
+
+**Low-speed compensation tuning**:
+The temporary bench workflow that exposes static-friction duty and speed feedforward as debug text tuning controls so reliable start can be investigated without enabling compensation by default. Static-friction duty is a bounded start boost: it arms when a nonzero wheel target changes, stays active for a short minimum start window, then drops out after measured wheel speed confirms movement in the target direction or after a maximum boost window.
+_Avoid_: hiding static friction inside PI gains, enabling always-on static boost without bench evidence, exposing compensation through the OPENART action protocol
+
+**Speed-loop bench safety envelope**:
+The suspended-chassis tuning boundary where AI-assisted serial tests use staged duty and speed limits, multi-second step holds, enforced stop intervals, and immediate stop on abnormal telemetry instead of ground-driving the robot or jumping directly to full power.
+_Avoid_: first-test full power, ground motion during wheel-speed tuning, one-second-only stability judgments
+
+**Evidence-backed tuning commit**:
+The workflow where a temporary tuning value is copied into source defaults only after bench results record the tested command set, observed speed response, safety state, and reason for accepting that value.
+_Avoid_: committing every trial parameter, undocumented tuning defaults
+
+**Speed-loop tuning evidence**:
+The paired record of raw serial logs and summarized hardware-test results for each wheel-speed tuning run, including command sequence, target speeds, duration, limits, gains, compensation settings, dt range, speed min/max/mean, saturation, stop behavior, and conclusion.
+_Avoid_: tuning by feel only, summary without raw trace, raw trace without decision notes
+
+**Automated speed-loop bench script**:
+The repeatable AI-assisted debug workflow that runs speed-loop bench commands, captures raw serial output, computes coarse response statistics, enforces stop behavior, and emits summarized tuning evidence.
+_Avoid_: one-off manual serial sessions, unparsed tuning traces, tests that leave motors armed
+
+**Mac-to-Windows serial bench workflow**:
+The current hardware-control workflow where a repository script runs from macOS, uses the configured Windows SSH target and key, and controls the Windows VM serial port such as `COM3` while saving logs back into the shared workspace.
+_Avoid_: assuming macOS owns the UART device, ad-hoc VM shell commands without repo scripts
 
 **Fixed-point calibration constants**:
 Calibration constants printed and stored as integers with scale suffixes such as `_x100` or physical units such as `_MM`, so humans copy values without mental unit conversion.
@@ -162,7 +202,7 @@ _Avoid_: assuming CCW-positive math yaw
 - The **Lower controller** consumes **Discrete actions** and executes them with **Local closed loop** control.
 - **Local closed loop** uses encoders for wheel motion feedback and the IMU **Body yaw axis** for rotation feedback.
 - **Discrete actions** encode `MOVE` distance in centimeters, but **Local closed loop** converts that value to the **Local motion unit** before planning or control.
-- **Local closed loop** uses **Wheel-speed observation** for the wheel speed loop rather than treating the latest encoder interrupt sample as the control measurement.
+- **Local closed loop** derives **Wheel-speed observation** from accumulated encoder totals and uses **Filtered wheel-speed estimate** as the wheel-speed PI control measurement.
 - **Local closed loop** uses a **Wheel-speed PI loop** as the first-version inner loop for each wheel.
 - The **Odometry action controller** uses **Single-action local odometry**, **Wheel travel calibration**, a **Trapezoid motion profile**, and reports `DONE` only after a **Completion window** is satisfied.
 - A `MOVE` **Completion window** uses position error and near-zero wheel speeds; a `ROTATE` **Completion window** uses angle error, near-zero wheel speeds, and near-zero **Body yaw axis** angular rate.
@@ -179,9 +219,18 @@ _Avoid_: assuming CCW-positive math yaw
 - **Calibration telemetry mode** precedes closed-loop `MOVE` and `ROTATE` implementation.
 - **Calibration telemetry mode** is operated through the **Debug text command layer**, not the OPENART binary action protocol.
 - **Speed-loop bench mode** follows calibration and precedes wiring the speed loop into `MOVE` or `ROTATE` actions.
+- **First-stage speed-loop acceptance** decides whether the wheel-speed loop is ready to become the inner loop for later `MOVE` and `ROTATE` work.
+- **Wheel-speed tuning sequence** checks single-wheel response before all-wheel response.
+- **First-stage speed response standard** evaluates bench traces by filtered-speed direction, mean response, saturation, raw-speed spike context, and stop behavior before applying stricter smoothness metrics.
 - **Motion debug mode** may reuse motors for bench work, but default firmware motion ownership belongs to closed-loop action execution.
 - **Manual calibration commit** is used for first-version encoder calibration constants.
 - Closed-loop tuning starts from compile-time defaults and may use **Temporary tuning override** during bench tests.
+- **Low-speed compensation tuning** is a **Temporary tuning override** used to investigate reliable low-speed start before any compensation is committed to source defaults.
+- **Speed-loop bench safety envelope** bounds AI-assisted tuning before wheel-speed control is used under real chassis motion.
+- **Temporary tuning override** becomes an **Evidence-backed tuning commit** only after the bench evidence is recorded and the chosen values are intentionally copied into source defaults.
+- **Speed-loop tuning evidence** supports **Evidence-backed tuning commit** decisions.
+- The **Automated speed-loop bench script** produces **Speed-loop tuning evidence** for AI-assisted tuning.
+- The first **Automated speed-loop bench script** uses the **Mac-to-Windows serial bench workflow** because the UART is currently attached to Windows `COM3`.
 - **Fixed-point calibration constants** avoid manual conversion when copying calibration output into source configuration.
 - **Integer-turn encoder calibration** is the first-version encoder calibration input method.
 - **IMU X yaw observation** is required before using **Rotation action feedback** or **Move heading hold**.
@@ -201,7 +250,7 @@ _Avoid_: assuming CCW-positive math yaw
 - STOP can mean normal cancellation or emergency stop. Resolved: UART `STOP` enters **Emergency stop state** and requires `RESET` before normal actions resume.
 - RESET can mean protocol recovery or MCU reboot. Resolved: UART `RESET` is **Protocol reset**, not a hardware reset and not a calibration reset.
 - `MOVE` distance can mean protocol centimeters or local control distance. Resolved: centimeters exist only at the UART protocol boundary; the **Lower controller** uses the **Local motion unit** for closed-loop planning and feedback.
-- Wheel speed can mean the latest encoder PIT delta or the controller's speed estimate. Resolved: **Wheel-speed observation** is computed from accumulated encoder total delta over elapsed motion-control time.
+- Wheel speed can mean the latest encoder PIT delta, raw motion-tick speed, or the controller's filtered speed estimate. Resolved: **Wheel-speed observation** is raw speed from accumulated encoder total delta over elapsed motion-control time; **Filtered wheel-speed estimate** is the value consumed by PI, start-boost exit, completion, and fault checks.
 - Wheel speed control can mean direct duty mapping, PI, or full PID with feedforward. Resolved: first version is **Wheel-speed PI loop** with D and feedforward fields reserved, static-friction compensation off by default.
 - `wz` can mean chassis angular rate or a wheel-speed rotation contribution. Resolved: first-version local control uses **Rotational wheel-speed contribution** and should name code variables `rot_mm_s` or `wz_wheel_mm_s`, not treat them as `deg/s` or `rad/s`.
 - "done" can mean the estimated distance reached or the robot physically settled. Resolved: `DONE` requires the **Completion window**, not only target distance crossing.
@@ -218,9 +267,17 @@ _Avoid_: assuming CCW-positive math yaw
 - Closed-loop control must not be tuned before the measurement units are trustworthy. Resolved: implement **Calibration telemetry mode** before enabling closed-loop actions.
 - Calibration is for human bench work, not upper-controller action exchange. Resolved: calibration and telemetry commands live in the **Debug text command layer**, while `UART_PROTOCOL.md` remains focused on OPENART discrete actions.
 - Speed-loop tuning is bench work, not upper-controller action exchange. Resolved: **Speed-loop bench mode** lives in the **Debug text command layer**, while `UART_PROTOCOL.md` still exposes only discrete actions.
+- "wheel-speed loop is done" can mean action-ready inner-loop response or polished low-speed crawl. Resolved: use **First-stage speed-loop acceptance** first, then treat low-speed smoothness as a later refinement.
 - Open-loop motor tests can be the default firmware path or a debug mode. Resolved: closed-loop action execution becomes the default motion owner; open-loop and speed-loop testing are explicit **Motion debug mode** choices.
 - Calibration output should not introduce runtime persistence yet. Resolved: first version uses **Manual calibration commit**; commands print values and do not save them automatically.
 - Tuning commands can mean runtime experimentation or persistent settings. Resolved: first version supports **Temporary tuning override** only; accepted values must be committed to source defaults manually.
+- `50 mm/s` start failure can mean PI tuning, motor deadband, or static friction. Resolved: expose **Low-speed compensation tuning** through debug text commands, with compensation defaulting off until bench evidence justifies changing defaults, and make static-friction duty a bounded measured-speed-confirmed start boost so it does not become an always-on `100 mm/s` bias or a 5 ms bang-bang term.
+- Encoder speed filtering can mean smoothing odometry or smoothing control input. Resolved: filter only the control-facing **Filtered wheel-speed estimate**; keep encoder delta and **Wheel-speed observation** raw for displacement and diagnostics.
+- Speed-loop tuning can be too timid or too risky. Resolved: use the **Speed-loop bench safety envelope** with staged limits, typical `3-5 s` single-wheel holds, `2-4 s` all-wheel holds, stop intervals, and immediate stop on abnormal telemetry.
+- Speed-loop logs can mean raw serial dumps or decision summaries. Resolved: **Speed-loop tuning evidence** requires both raw logs and summarized hardware-test results.
+- Agent-run speed tests should be repeatable. Resolved: use an **Automated speed-loop bench script** before making repeated tuning comparisons.
+- Serial bench scripts can run on the Mac or inside Windows. Resolved: use the **Mac-to-Windows serial bench workflow** for the current setup.
+- AI-assisted tuning may run serial tests and temporary tuning overrides, but source defaults should change only through an **Evidence-backed tuning commit**.
 - Closed-loop tuning values can be fixed-point integers or human-readable floating-point values. Resolved: PID gains and limits use floating-point values, while calibration constants keep their explicit fixed-point or physical-unit suffixes.
 - Fixed-point output must not force humans to do arithmetic before editing config. Resolved: print and store scaled integer constants using the same suffix, such as `COUNTS_PER_REV_X100`.
 - Encoder calibration input should stay simple. Resolved: first version accepts positive integer wheel turns only.

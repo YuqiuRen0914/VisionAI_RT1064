@@ -5,6 +5,7 @@
 ## 目录结构
 
 - `keil/`：Keil MDK 构建、清理、下载和交互式任务脚本。
+- `bench/`：硬件台架调试脚本，例如轮速闭环串口自动测试。
 - `windows/`：Windows OpenSSH 配置和连通性检查脚本。
 - `vendor/`：第三方工具源码或二进制工具。
 - `vendor/seekfree_assistant/`：逐飞助手，后续用于串口调试和数据测试。
@@ -26,6 +27,10 @@
 
 ```bash
 ./tools/windows/test-windows-ssh.sh
+```
+
+```bash
+./tools/bench/speed-loop-bench.py --plan-only
 ```
 
 ```powershell

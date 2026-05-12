@@ -9,5 +9,6 @@
 #define MOTION_SPEED_FEEDFORWARD_DEFAULT          (0.0f)
 #define MOTION_SPEED_STATIC_DUTY_DEFAULT          (0.0f)
 #define MOTION_SPEED_STATIC_THRESHOLD_MM_S        (30.0f)
+#define MOTION_SPEED_FILTER_TAU_MS_DEFAULT        (30.0f)
 
 #endif

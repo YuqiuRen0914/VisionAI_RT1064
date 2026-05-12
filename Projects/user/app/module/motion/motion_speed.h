@@ -41,6 +41,7 @@ typedef struct
     float feedforward_duty_per_mm_s;
     float static_duty_percent;
     float static_threshold_mm_s;
+    float speed_filter_tau_ms;
     float wheel_diameter_mm;
     int32_t counts_per_rev_x100[MOTION_SPEED_WHEEL_COUNT];
 } motion_speed_config_t;
@@ -48,6 +49,7 @@ typedef struct
 typedef struct
 {
     motion_speed_wheel_float_t target_mm_s;
+    motion_speed_wheel_float_t raw_measured_mm_s;
     motion_speed_wheel_float_t measured_mm_s;
     motion_speed_wheel_float_t duty_percent;
     motion_speed_encoder_delta_t encoder_delta;
@@ -61,9 +63,13 @@ typedef struct
     uint32_t last_ms;
     uint8_t has_last_sample;
     motion_speed_wheel_float_t target_mm_s;
+    motion_speed_wheel_float_t raw_measured_mm_s;
     motion_speed_wheel_float_t measured_mm_s;
     motion_speed_wheel_float_t duty_percent;
+    uint8_t filter_initialized[MOTION_SPEED_WHEEL_COUNT];
     float integral_duty[MOTION_SPEED_WHEEL_COUNT];
+    uint8_t static_boost_armed[MOTION_SPEED_WHEEL_COUNT];
+    uint32_t static_boost_elapsed_ms[MOTION_SPEED_WHEEL_COUNT];
 } motion_speed_controller_t;
 
 void motion_speed_default_config(motion_speed_config_t *config);

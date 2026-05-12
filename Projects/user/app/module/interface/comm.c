@@ -322,6 +322,9 @@ static void comm_send_help(void)
     comm_send_line("speed all <w1_mm_s> <w2_mm_s> <w3_mm_s> <w4_mm_s>");
     comm_send_line("speed pid <kp> <ki> <kd>");
     comm_send_line("speed limit <duty_pct> <max_mm_s>");
+    comm_send_line("speed static <duty_pct> <measured_threshold_mm_s>");
+    comm_send_line("speed ff <duty_per_mm_s>");
+    comm_send_line("speed filter <tau_ms>");
     comm_send_line("motor <1|2|3|4|all> <duty_pct> <ms>");
     comm_send_line("move <fwd|back|left|right|ccw|cw> <duty_pct> <ms>");
     comm_send_line("vision");
@@ -623,21 +626,25 @@ static void comm_send_stream_frame(void)
     else if(comm_stream_mode == COMM_STREAM_SPEED)
     {
         motion_speed_bench_get_sample(&speed_sample);
-        comm_send_line("DATA speed dt_ms=%lu t1=%.1f m1=%.1f d1=%.1f e1=%ld t2=%.1f m2=%.1f d2=%.1f e2=%ld t3=%.1f m3=%.1f d3=%.1f e3=%ld t4=%.1f m4=%.1f d4=%.1f e4=%ld",
+        comm_send_line("DATA speed dt_ms=%lu t1=%.1f r1=%.1f m1=%.1f d1=%.1f e1=%ld t2=%.1f r2=%.1f m2=%.1f d2=%.1f e2=%ld t3=%.1f r3=%.1f m3=%.1f d3=%.1f e3=%ld t4=%.1f r4=%.1f m4=%.1f d4=%.1f e4=%ld",
                        (unsigned long)speed_sample.dt_ms,
                        (double)speed_sample.target_mm_s.wheel1,
+                       (double)speed_sample.raw_measured_mm_s.wheel1,
                        (double)speed_sample.measured_mm_s.wheel1,
                        (double)speed_sample.duty_percent.wheel1,
                        (long)speed_sample.encoder_delta.wheel1,
                        (double)speed_sample.target_mm_s.wheel2,
+                       (double)speed_sample.raw_measured_mm_s.wheel2,
                        (double)speed_sample.measured_mm_s.wheel2,
                        (double)speed_sample.duty_percent.wheel2,
                        (long)speed_sample.encoder_delta.wheel2,
                        (double)speed_sample.target_mm_s.wheel3,
+                       (double)speed_sample.raw_measured_mm_s.wheel3,
                        (double)speed_sample.measured_mm_s.wheel3,
                        (double)speed_sample.duty_percent.wheel3,
                        (long)speed_sample.encoder_delta.wheel3,
                        (double)speed_sample.target_mm_s.wheel4,
+                       (double)speed_sample.raw_measured_mm_s.wheel4,
                        (double)speed_sample.measured_mm_s.wheel4,
                        (double)speed_sample.duty_percent.wheel4,
                        (long)speed_sample.encoder_delta.wheel4);
@@ -1028,6 +1035,71 @@ static void comm_handle_speed_command(char *sub_command)
         else
         {
             comm_send_line("ERR speed limit bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "static") == 0)
+    {
+        char *duty_text = strtok(NULL, " ");
+        char *threshold_text = strtok(NULL, " ");
+        float duty_percent;
+        float threshold_mm_s;
+
+        if((comm_parse_f32(duty_text, &duty_percent) != AI_OK) ||
+           (comm_parse_f32(threshold_text, &threshold_mm_s) != AI_OK))
+        {
+            comm_send_line("ERR speed static usage");
+            return;
+        }
+
+        if(motion_speed_bench_set_static(duty_percent, threshold_mm_s) == AI_OK)
+        {
+            comm_send_line("OK speed static duty=%.1f threshold_mm_s=%.1f",
+                           (double)duty_percent,
+                           (double)threshold_mm_s);
+        }
+        else
+        {
+            comm_send_line("ERR speed static bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "ff") == 0)
+    {
+        char *ff_text = strtok(NULL, " ");
+        float duty_per_mm_s;
+
+        if(comm_parse_f32(ff_text, &duty_per_mm_s) != AI_OK)
+        {
+            comm_send_line("ERR speed ff usage");
+            return;
+        }
+
+        if(motion_speed_bench_set_feedforward(duty_per_mm_s) == AI_OK)
+        {
+            comm_send_line("OK speed ff duty_per_mm_s=%.4f", (double)duty_per_mm_s);
+        }
+        else
+        {
+            comm_send_line("ERR speed ff bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "filter") == 0)
+    {
+        char *tau_text = strtok(NULL, " ");
+        float tau_ms;
+
+        if(comm_parse_f32(tau_text, &tau_ms) != AI_OK)
+        {
+            comm_send_line("ERR speed filter usage");
+            return;
+        }
+
+        if(motion_speed_bench_set_filter(tau_ms) == AI_OK)
+        {
+            comm_send_line("OK speed filter tau_ms=%.1f", (double)tau_ms);
+        }
+        else
+        {
+            comm_send_line("ERR speed filter bad_arg");
         }
     }
     else

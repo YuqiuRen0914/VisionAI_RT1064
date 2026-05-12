@@ -108,6 +108,10 @@ static void motion_zero_speed_sample(motion_speed_sample_t *sample)
     sample->target_mm_s.wheel2 = 0.0f;
     sample->target_mm_s.wheel3 = 0.0f;
     sample->target_mm_s.wheel4 = 0.0f;
+    sample->raw_measured_mm_s.wheel1 = 0.0f;
+    sample->raw_measured_mm_s.wheel2 = 0.0f;
+    sample->raw_measured_mm_s.wheel3 = 0.0f;
+    sample->raw_measured_mm_s.wheel4 = 0.0f;
     sample->measured_mm_s.wheel1 = 0.0f;
     sample->measured_mm_s.wheel2 = 0.0f;
     sample->measured_mm_s.wheel3 = 0.0f;
@@ -152,6 +156,7 @@ static void motion_load_speed_defaults(void)
     motion_speed_config.feedforward_duty_per_mm_s = MOTION_SPEED_FEEDFORWARD_DEFAULT;
     motion_speed_config.static_duty_percent = MOTION_SPEED_STATIC_DUTY_DEFAULT;
     motion_speed_config.static_threshold_mm_s = MOTION_SPEED_STATIC_THRESHOLD_MM_S;
+    motion_speed_config.speed_filter_tau_ms = MOTION_SPEED_FILTER_TAU_MS_DEFAULT;
     motion_speed_config.wheel_diameter_mm = (float)DRIVE_WHEEL_DIAMETER_MM;
     motion_speed_config.counts_per_rev_x100[0] = DRIVE_WHEEL1_COUNTS_PER_REV_X100;
     motion_speed_config.counts_per_rev_x100[1] = DRIVE_WHEEL2_COUNTS_PER_REV_X100;
@@ -579,6 +584,45 @@ ai_status_t motion_speed_bench_set_limits(float duty_limit_percent, float max_sp
 
     motion_speed_config.duty_limit_percent = duty_limit_percent;
     motion_speed_config.max_speed_mm_s = max_speed_mm_s;
+
+    return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
+}
+
+ai_status_t motion_speed_bench_set_static(float duty_percent, float threshold_mm_s)
+{
+    if((duty_percent < 0.0f) ||
+       (duty_percent > (float)DRIVE_DUTY_PERCENT_MAX) ||
+       (threshold_mm_s < 0.0f))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_speed_config.static_duty_percent = duty_percent;
+    motion_speed_config.static_threshold_mm_s = threshold_mm_s;
+
+    return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
+}
+
+ai_status_t motion_speed_bench_set_feedforward(float duty_per_mm_s)
+{
+    if(duty_per_mm_s < 0.0f)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_speed_config.feedforward_duty_per_mm_s = duty_per_mm_s;
+
+    return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
+}
+
+ai_status_t motion_speed_bench_set_filter(float tau_ms)
+{
+    if(tau_ms < 0.0f)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_speed_config.speed_filter_tau_ms = tau_ms;
 
     return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
 }
