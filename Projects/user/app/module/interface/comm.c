@@ -17,7 +17,7 @@
 
 #define COMM_LINE_BUFFER_SIZE        (96U)
 #define COMM_RX_BUFFER_SIZE          (32U)
-#define COMM_RESPONSE_BUFFER_SIZE    (192U)
+#define COMM_RESPONSE_BUFFER_SIZE    (384U)
 #define COMM_IMU_STAT_MS_MAX         (60000U)
 #define COMM_COMMAND_IDLE_MS         (200U)
 #define COMM_READY_REPORT_PERIOD_MS  (1000U)
@@ -31,6 +31,7 @@ typedef enum
     COMM_STREAM_ENC5,
     COMM_STREAM_ENC100,
     COMM_STREAM_DUTY,
+    COMM_STREAM_SPEED,
 } comm_stream_mode_t;
 
 typedef struct
@@ -175,6 +176,26 @@ static ai_status_t comm_parse_i32(const char *text, int32_t *value)
     return AI_OK;
 }
 
+static ai_status_t comm_parse_f32(const char *text, float *value)
+{
+    char *end_ptr;
+    float parsed;
+
+    if((text == NULL) || (value == NULL) || (text[0] == '\0'))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    parsed = strtof(text, &end_ptr);
+    if((end_ptr == text) || (*end_ptr != '\0'))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    *value = parsed;
+    return AI_OK;
+}
+
 static ai_status_t comm_parse_u8_auto(const char *text, uint8_t *value)
 {
     char *end_ptr;
@@ -257,7 +278,27 @@ static const char *comm_stream_name(comm_stream_mode_t mode)
         return "duty";
     }
 
+    if(mode == COMM_STREAM_SPEED)
+    {
+        return "speed";
+    }
+
     return "off";
+}
+
+static const char *comm_motion_mode_name(motion_mode_t mode)
+{
+    if(mode == MOTION_MODE_OPEN_LOOP_TEST)
+    {
+        return "open_loop";
+    }
+
+    if(mode == MOTION_MODE_SPEED_BENCH)
+    {
+        return "speed_bench";
+    }
+
+    return "action_closed_loop";
 }
 
 static void comm_send_help(void)
@@ -271,11 +312,16 @@ static void comm_send_help(void)
     comm_send_line("imu zero");
     comm_send_line("imu yawx zero");
     comm_send_line("imu stat <ms>");
-    comm_send_line("stream off|imu_acc|imu_gyro|imu_yawx|enc5|enc100|duty");
+    comm_send_line("stream off|imu_acc|imu_gyro|imu_yawx|enc5|enc100|duty|speed");
     comm_send_line("stream data is text: DATA <mode> ...");
     comm_send_line("cal enc zero");
     comm_send_line("cal enc total|delta");
     comm_send_line("cal enc wheel <1|2|3|4> <turns>");
+    comm_send_line("speed arm|stop");
+    comm_send_line("speed wheel <1|2|3|4> <mm_s>");
+    comm_send_line("speed all <w1_mm_s> <w2_mm_s> <w3_mm_s> <w4_mm_s>");
+    comm_send_line("speed pid <kp> <ki> <kd>");
+    comm_send_line("speed limit <duty_pct> <max_mm_s>");
     comm_send_line("motor <1|2|3|4|all> <duty_pct> <ms>");
     comm_send_line("move <fwd|back|left|right|ccw|cw> <duty_pct> <ms>");
     comm_send_line("vision");
@@ -497,6 +543,7 @@ static void comm_send_stream_frame(void)
     Imu660raScaledData imu;
     DriveEncoderDelta encoder_delta;
     mecanum_duty_t duty;
+    motion_speed_sample_t speed_sample;
     calibration_yawx_sample_t yawx_sample;
     int32_t acc_x_mg;
     int32_t acc_y_mg;
@@ -573,6 +620,28 @@ static void comm_send_stream_frame(void)
                        (int)duty.motor3,
                        (int)duty.motor4);
     }
+    else if(comm_stream_mode == COMM_STREAM_SPEED)
+    {
+        motion_speed_bench_get_sample(&speed_sample);
+        comm_send_line("DATA speed dt_ms=%lu t1=%.1f m1=%.1f d1=%.1f e1=%ld t2=%.1f m2=%.1f d2=%.1f e2=%ld t3=%.1f m3=%.1f d3=%.1f e3=%ld t4=%.1f m4=%.1f d4=%.1f e4=%ld",
+                       (unsigned long)speed_sample.dt_ms,
+                       (double)speed_sample.target_mm_s.wheel1,
+                       (double)speed_sample.measured_mm_s.wheel1,
+                       (double)speed_sample.duty_percent.wheel1,
+                       (long)speed_sample.encoder_delta.wheel1,
+                       (double)speed_sample.target_mm_s.wheel2,
+                       (double)speed_sample.measured_mm_s.wheel2,
+                       (double)speed_sample.duty_percent.wheel2,
+                       (long)speed_sample.encoder_delta.wheel2,
+                       (double)speed_sample.target_mm_s.wheel3,
+                       (double)speed_sample.measured_mm_s.wheel3,
+                       (double)speed_sample.duty_percent.wheel3,
+                       (long)speed_sample.encoder_delta.wheel3,
+                       (double)speed_sample.target_mm_s.wheel4,
+                       (double)speed_sample.measured_mm_s.wheel4,
+                       (double)speed_sample.duty_percent.wheel4,
+                       (long)speed_sample.encoder_delta.wheel4);
+    }
 }
 
 static void comm_handle_stream_command(char *mode)
@@ -622,6 +691,10 @@ static void comm_handle_stream_command(char *mode)
     else if(strcmp(mode, "duty") == 0)
     {
         comm_stream_mode = COMM_STREAM_DUTY;
+    }
+    else if(strcmp(mode, "speed") == 0)
+    {
+        comm_stream_mode = COMM_STREAM_SPEED;
     }
     else
     {
@@ -810,6 +883,156 @@ static void comm_handle_cal_command(char *sub_command)
     else
     {
         comm_send_line("ERR cal usage");
+    }
+}
+
+static void comm_handle_speed_command(char *sub_command)
+{
+    ai_status_t status;
+
+    if(sub_command == NULL)
+    {
+        comm_send_line("ERR speed usage");
+        return;
+    }
+
+    if(strcmp(sub_command, "arm") == 0)
+    {
+        status = motion_speed_bench_arm();
+        if(status == AI_OK)
+        {
+            comm_send_line("OK speed arm");
+        }
+        else
+        {
+            comm_send_line("ERR speed arm");
+        }
+    }
+    else if(strcmp(sub_command, "stop") == 0)
+    {
+        (void)motion_speed_bench_stop();
+        comm_send_line("OK speed stop");
+    }
+    else if(strcmp(sub_command, "wheel") == 0)
+    {
+        char *wheel_text = strtok(NULL, " ");
+        char *speed_text = strtok(NULL, " ");
+        int32_t wheel_id;
+        float target_mm_s;
+
+        if((comm_parse_i32(wheel_text, &wheel_id) != AI_OK) ||
+           (comm_parse_f32(speed_text, &target_mm_s) != AI_OK))
+        {
+            comm_send_line("ERR speed wheel usage");
+            return;
+        }
+
+        status = motion_speed_bench_set_wheel((uint8_t)wheel_id, target_mm_s);
+        if(status == AI_OK)
+        {
+            comm_send_line("OK speed wheel=%ld target_mm_s=%.1f", (long)wheel_id, (double)target_mm_s);
+        }
+        else if(status == AI_ERR_BUSY)
+        {
+            comm_send_line("ERR speed disarmed, send speed arm");
+        }
+        else
+        {
+            comm_send_line("ERR speed wheel bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "all") == 0)
+    {
+        char *w1_text = strtok(NULL, " ");
+        char *w2_text = strtok(NULL, " ");
+        char *w3_text = strtok(NULL, " ");
+        char *w4_text = strtok(NULL, " ");
+        float w1;
+        float w2;
+        float w3;
+        float w4;
+
+        if((comm_parse_f32(w1_text, &w1) != AI_OK) ||
+           (comm_parse_f32(w2_text, &w2) != AI_OK) ||
+           (comm_parse_f32(w3_text, &w3) != AI_OK) ||
+           (comm_parse_f32(w4_text, &w4) != AI_OK))
+        {
+            comm_send_line("ERR speed all usage");
+            return;
+        }
+
+        status = motion_speed_bench_set_all(w1, w2, w3, w4);
+        if(status == AI_OK)
+        {
+            comm_send_line("OK speed all w1=%.1f w2=%.1f w3=%.1f w4=%.1f",
+                           (double)w1,
+                           (double)w2,
+                           (double)w3,
+                           (double)w4);
+        }
+        else if(status == AI_ERR_BUSY)
+        {
+            comm_send_line("ERR speed disarmed, send speed arm");
+        }
+        else
+        {
+            comm_send_line("ERR speed all bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "pid") == 0)
+    {
+        char *kp_text = strtok(NULL, " ");
+        char *ki_text = strtok(NULL, " ");
+        char *kd_text = strtok(NULL, " ");
+        float kp;
+        float ki;
+        float kd;
+
+        if((comm_parse_f32(kp_text, &kp) != AI_OK) ||
+           (comm_parse_f32(ki_text, &ki) != AI_OK) ||
+           (comm_parse_f32(kd_text, &kd) != AI_OK))
+        {
+            comm_send_line("ERR speed pid usage");
+            return;
+        }
+
+        if(motion_speed_bench_set_pid(kp, ki, kd) == AI_OK)
+        {
+            comm_send_line("OK speed pid kp=%.4f ki=%.4f kd=%.4f", (double)kp, (double)ki, (double)kd);
+        }
+        else
+        {
+            comm_send_line("ERR speed pid bad_arg");
+        }
+    }
+    else if(strcmp(sub_command, "limit") == 0)
+    {
+        char *duty_text = strtok(NULL, " ");
+        char *speed_text = strtok(NULL, " ");
+        float duty_limit;
+        float max_speed;
+
+        if((comm_parse_f32(duty_text, &duty_limit) != AI_OK) ||
+           (comm_parse_f32(speed_text, &max_speed) != AI_OK))
+        {
+            comm_send_line("ERR speed limit usage");
+            return;
+        }
+
+        if(motion_speed_bench_set_limits(duty_limit, max_speed) == AI_OK)
+        {
+            comm_send_line("OK speed limit duty=%.1f max_mm_s=%.1f",
+                           (double)duty_limit,
+                           (double)max_speed);
+        }
+        else
+        {
+            comm_send_line("ERR speed limit bad_arg");
+        }
+    }
+    else
+    {
+        comm_send_line("ERR speed usage");
     }
 }
 
@@ -1275,8 +1498,8 @@ static void comm_handle_line(char *line)
     }
     else if(strcmp(command, "stop") == 0)
     {
-        (void)motion_test_stop();
-        comm_send_line("OK stop disarmed");
+        motion_action_stop_all();
+        comm_send_line("OK stop");
     }
     else if(strcmp(command, "arm") == 0)
     {
@@ -1290,8 +1513,10 @@ static void comm_handle_line(char *line)
     }
     else if(strcmp(command, "status") == 0)
     {
-        comm_send_line("OK status armed=%u stream=%s",
+        comm_send_line("OK status mode=%s armed=%u speed_armed=%u stream=%s",
+                       comm_motion_mode_name(motion_get_mode()),
                        (unsigned int)motion_test_is_armed(),
+                       (unsigned int)motion_speed_bench_is_armed(),
                        comm_stream_name(comm_stream_mode));
     }
     else if(strcmp(command, "stream") == 0)
@@ -1305,6 +1530,10 @@ static void comm_handle_line(char *line)
     else if(strcmp(command, "cal") == 0)
     {
         comm_handle_cal_command(strtok(NULL, " "));
+    }
+    else if(strcmp(command, "speed") == 0)
+    {
+        comm_handle_speed_command(strtok(NULL, " "));
     }
     else if(strcmp(command, "motor") == 0)
     {
@@ -1414,7 +1643,7 @@ static void comm_update_ready_report(void)
 
     comm_ready_report_elapsed_ms = 0;
     comm_ready_report_count++;
-    comm_send_line("OK open_loop_test ready uart=UART1 baud=115200 tick=%lu", (unsigned long)comm_ready_report_count);
+    comm_send_line("OK closed_loop ready uart=UART1 baud=115200 tick=%lu", (unsigned long)comm_ready_report_count);
 }
 
 ai_status_t comm_module_init(void)
@@ -1454,7 +1683,7 @@ ai_status_t comm_module_init(void)
     calibration_encoder_reset_baseline(&comm_cal_encoder, &counts);
     calibration_yawx_zero(&comm_cal_yawx, 0);
 
-    comm_send_line("OK open_loop_test ready uart=UART1 baud=115200, type help, send arm before motor/move");
+    comm_send_line("OK closed_loop ready uart=UART1 baud=115200, type help");
 
     return WirelessInit();
 }

@@ -1,4 +1,4 @@
-# 上位机 ↔ 下位机 UART 通信协议 v1.1
+# 上位机 ↔ 下位机 UART 通信协议 v1.3
 
 > **背景**：上位机 = OpenART Plus 视觉决策板，运行 SAGE-PR 模型；下位机 = 电机/底盘 MCU。
 > **场景**：推箱子赛题，决策是**离散**的 — 上位机每次发一条运动命令，等下位机执行完再发下一条。
@@ -54,9 +54,9 @@
 | -------- | ---------------- | ----------- | ------------------------------------ | ------------------------ |
 | `0x01` | **MOVE**   | 方向 (见下) | 距离 cm (1–255)                     | 沿指定方向直线移动       |
 | `0x02` | **ROTATE** | 旋向 (见下) | 角度 `0x5A`=90° 或 `0xB4`=180° | 原地旋转                 |
-| `0x03` | **STOP**   | 0x00        | 0x00                                 | 紧急停止 (打断当前动作)  |
+| `0x03` | **STOP**   | 0x00        | 0x00                                 | 紧急停止，打断当前动作并进入 ERROR 状态 |
 | `0x04` | **QUERY**  | 0x00        | 0x00                                 | 查询状态 (心跳/超时确认) |
-| `0x05` | **RESET**  | 0x00        | 0x00                                 | 复位 SEQ 计数 / 清错     |
+| `0x05` | **RESET**  | 0x00        | 0x00                                 | 协议复位：清错并回到 IDLE |
 
 **MOVE 的 DIR 取值**：
 
@@ -112,6 +112,21 @@
 | `0x01` | BUSY 正在执行某动作         |
 | `0x02` | ERROR 处于错误态 (需 RESET) |
 
+**STOP 语义**：
+
+- `STOP` 是紧急停车，不是普通取消。
+- 下位机收到合法 `STOP` 后必须立即停止电机并回 `ACK`。
+- 若当时有动作正在执行，该动作被打断，不再回 `DONE`。
+- `STOP` 后状态变为 `ERROR`，普通 `MOVE` / `ROTATE` 保持拒绝，直到收到合法 `RESET`。
+- `RESET` 清除错误态和最近动作重放状态，使下位机回到 `IDLE`。
+
+**RESET 语义**：
+
+- `RESET` 是协议状态复位，不是 MCU 硬件复位。
+- 下位机收到合法 `RESET` 后必须停止电机、清空当前动作控制状态、清除 `ERROR` 状态、清除最近动作重放记录，并回 `ACK`。
+- `RESET` 不清除编译进固件的校准常量，也不修改运行参数持久化状态。
+- `RESET` 后 `QUERY` 应返回 `STATUS / IDLE`。
+
 ---
 
 ## 4. 握手时序
@@ -140,8 +155,12 @@
 
 **重发规则**：
 
-- 上位机重发的帧 **SEQ 不变**。下位机若识别到重复 SEQ 且已 ACK/DONE，**只回 ACK，不重复执行**。
-- 这要求下位机维护最近一次 ACK 过的 SEQ。
+- 上位机重发的帧 **SEQ 不变**，且 `CMD/DIR/VAL` 必须与原帧完全相同。
+- 下位机识别到重复 `SEQ + CMD + DIR + VAL` 时，**绝不重复执行动作**。
+- 若原动作仍在执行，重发 `ACK`。
+- 若原动作已经结束，重发该动作之前的最终结果：`DONE` 或 `ERROR`。
+- 若同一 `SEQ` 搭配了不同的 `CMD/DIR/VAL`，视为协议误用，下位机回 `ERROR / BAD_CMD`，不执行新动作。
+- 这要求下位机维护最近一次动作帧，以及该动作最近一次回复状态：`ACK`、`DONE` 或 `ERROR`。
 
 ---
 
@@ -266,11 +285,34 @@ def rotate(seq, ccw_or_cw, deg):
 #define EOF_BYTE 0x55
 
 typedef struct { uint8_t seq, cmd, dir, val; } Frame;
+typedef struct { uint8_t cmd, dir, val; } Reply;
 
 enum { WAIT_SOF, READ_BODY } state = WAIT_SOF;
 uint8_t buf[6];
 int idx = 0;
-uint8_t last_acked_seq = 0xFF;  // 永不等于初始合法 SEQ
+Frame last_action;
+Reply last_reply;
+uint8_t has_last_action = 0;
+uint8_t last_reply_valid = 0;
+
+int same_action(Frame a, Frame b) {
+    return a.seq == b.seq && a.cmd == b.cmd && a.dir == b.dir && a.val == b.val;
+}
+
+void remember_reply(uint8_t cmd, uint8_t dir, uint8_t val) {
+    last_reply.cmd = cmd;
+    last_reply.dir = dir;
+    last_reply.val = val;
+    last_reply_valid = 1;
+}
+
+void replay_last_reply(Frame f) {
+    if (last_reply_valid) {
+        send_frame(f.seq, last_reply.cmd, last_reply.dir, last_reply.val);
+    } else {
+        send_ack(f);
+    }
+}
 
 void on_byte(uint8_t b) {
     if (state == WAIT_SOF) {
@@ -292,19 +334,27 @@ void on_byte(uint8_t b) {
 
 void handle_cmd(Frame f) {
     // 重复 SEQ 的幂等处理
-    if (f.seq == last_acked_seq) { send_ack(f); return; }
+    if (has_last_action && f.seq == last_action.seq) {
+        if (same_action(f, last_action)) {
+            replay_last_reply(f);
+        } else {
+            send_error(f.seq, 0x04);
+        }
+        return;
+    }
 
     switch (f.cmd) {
-        case 0x01: /* MOVE   */ start_move(f.dir, f.val); break;
-        case 0x02: /* ROTATE */ start_rotate(f.dir, f.val); break;
+        case 0x01: /* MOVE   */ last_action = f; has_last_action = 1; start_move(f.dir, f.val); break;
+        case 0x02: /* ROTATE */ last_action = f; has_last_action = 1; start_rotate(f.dir, f.val); break;
         case 0x03: /* STOP   */ emergency_stop(); break;
         case 0x04: /* QUERY  */ send_status(); return;  // 不需要 ACK
-        case 0x05: /* RESET  */ last_acked_seq = 0xFF; clear_error(); break;
+        case 0x05: /* RESET  */ has_last_action = 0; last_reply_valid = 0; clear_error(); break;
         default:                send_error(f.seq, 0x04); return;
     }
     send_ack(f);
-    last_acked_seq = f.seq;
-    // 当 start_move/start_rotate 完成时, 在电机回调里调 send_done(f.seq, ...)
+    remember_reply(0x81, f.dir, f.val);
+    // 当 start_move/start_rotate 完成时, 在电机回调里调 send_done/send_error,
+    // 并用 remember_reply(0x82/0x83, dir, val) 记录最终结果用于重复帧重放。
 }
 ```
 
@@ -320,7 +370,8 @@ void handle_cmd(Frame f) {
 - MOVE 40cm 实测误差 (建议 ≤ ±2 cm)
 - ROTATE 90° 实测误差 (建议 ≤ ±3°)
 - DONE 时间字段准确反映实际耗时
-- 同 SEQ 重发只执行一次 (幂等)
+- 同 SEQ 同 payload 重发只执行一次；执行中重发 ACK，结束后重发 DONE/ERROR
+- 同 SEQ 不同 payload 会回 BAD_CMD，不执行新动作
 - 故意发坏 CHK / EOF，能正确回 BAD_FRAME 并继续工作
 - STOP 能立即停车
 - 连续 100 条命令无丢帧 / 漂移
@@ -343,5 +394,7 @@ void handle_cmd(Frame f) {
 
 | 版本 | 日期       | 变更                                                                                                                                                                                  |
 | ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1.3 | 2026-05-12 | 明确 `STOP` 是紧急停车：收到后立即停车并回 `ACK`，进入 `ERROR` 状态，需 `RESET` 后恢复普通动作；明确 `RESET` 是协议状态复位，不是 MCU 硬件复位 |
+| v1.2 | 2026-05-12 | 明确重复 `SEQ + CMD + DIR + VAL` 的幂等处理：执行中重发 `ACK`，结束后重发此前最终 `DONE` / `ERROR`；同 SEQ 不同 payload 视为 `BAD_CMD` |
 | v1.1 | 2026-05-12 | 增加 `SENSOR_INVALID=0x07` 和 `CONTROL_UNSTABLE=0x08`；明确 `TIMEOUT` / `OBSTRUCTED` / `SENSOR_INVALID` / `CONTROL_UNSTABLE` / `MOTOR_FAULT` 边界；原有命令和值保持不变 |
 | v1.0 | 2026-05-12 | 初版：7 字节帧 + ACK/DONE 两段握手 + XOR 校验                                                                                                                                         |

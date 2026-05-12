@@ -1,28 +1,10 @@
 #include "vision.h"
 
-#include "ai_config.h"
+#include "action_controller.h"
 #include "motion.h"
 #include "vision_protocol.h"
 
-#define VISION_MOVE_DUTY              (20)
-#define VISION_ROTATE_DUTY            (20)
-#define VISION_MOVE_MS_PER_CM         (10U)
-#define VISION_ROTATE_90_MS           (700U)
-#define VISION_ROTATE_180_MS          (1400U)
-
-typedef struct
-{
-    uint8_t active;
-    uint8_t seq;
-    uint8_t cmd;
-    uint8_t dir;
-    uint32_t elapsed_ms;
-    uint32_t run_ms;
-} vision_action_t;
-
-static uint8_t vision_last_acked_seq;
-static uint8_t vision_error_latched;
-static vision_action_t vision_action;
+static action_controller_t vision_action_controller;
 static vision_debug_t vision_debug;
 
 static void vision_clear_runtime_debug(void)
@@ -59,308 +41,134 @@ static void vision_clear_runtime_debug(void)
     }
 }
 
-static void vision_send_ack(const vision_protocol_frame_t *frame)
+static void vision_count_command(uint8_t cmd)
 {
-    vision_protocol_send_frame(frame->seq, VISION_PROTOCOL_CMD_ACK, frame->dir, frame->val);
+    if(cmd == VISION_PROTOCOL_CMD_MOVE)
+    {
+        vision_debug.move_cmds++;
+    }
+    else if(cmd == VISION_PROTOCOL_CMD_ROTATE)
+    {
+        vision_debug.rotate_cmds++;
+    }
+    else if(cmd == VISION_PROTOCOL_CMD_STOP)
+    {
+        vision_debug.stop_cmds++;
+    }
+    else if(cmd == VISION_PROTOCOL_CMD_QUERY)
+    {
+        vision_debug.query_cmds++;
+    }
+    else if(cmd == VISION_PROTOCOL_CMD_RESET)
+    {
+        vision_debug.reset_cmds++;
+    }
 }
 
-static void vision_send_done(uint8_t seq, uint8_t dir, uint32_t elapsed_ms)
+static void vision_record_response(const action_controller_response_t *response)
 {
-    uint32_t elapsed_10ms = elapsed_ms / 10U;
-
-    if(elapsed_10ms > UINT8_MAX)
+    if(response->cmd != VISION_PROTOCOL_CMD_ERROR)
     {
-        elapsed_10ms = UINT8_MAX;
+        return;
     }
 
-    vision_protocol_send_frame(seq, VISION_PROTOCOL_CMD_DONE, dir, (uint8_t)elapsed_10ms);
-}
+    vision_debug.last_error_seq = response->seq;
+    vision_debug.last_error = response->dir;
+    vision_debug.last_error_context = response->val;
 
-static void vision_send_error(uint8_t seq, uint8_t error, uint8_t context)
-{
-    vision_error_latched = 1U;
-    vision_debug.last_error_seq = seq;
-    vision_debug.last_error = error;
-    vision_debug.last_error_context = context;
-
-    if(error == VISION_PROTOCOL_ERROR_BAD_CMD)
+    if(response->dir == VISION_PROTOCOL_ERROR_BAD_CMD)
     {
         vision_debug.bad_cmds++;
     }
-    else if(error == VISION_PROTOCOL_ERROR_BUSY)
+    else if(response->dir == VISION_PROTOCOL_ERROR_BUSY)
     {
         vision_debug.busy_errors++;
     }
-    else if(error == VISION_PROTOCOL_ERROR_MOTOR_FAULT)
+    else if(response->dir == VISION_PROTOCOL_ERROR_MOTOR_FAULT)
     {
         vision_debug.motion_errors++;
     }
-
-    vision_protocol_send_frame(seq, VISION_PROTOCOL_CMD_ERROR, error, context);
 }
 
-static uint8_t vision_get_status(void)
+static void vision_send_response(const action_controller_response_t *response)
 {
-    if(vision_action.active != 0U)
+    if(response->cmd == 0U)
     {
-        return VISION_PROTOCOL_STATUS_BUSY;
+        return;
     }
 
-    if(vision_error_latched != 0U)
-    {
-        return VISION_PROTOCOL_STATUS_ERROR;
-    }
-
-    return VISION_PROTOCOL_STATUS_IDLE;
+    vision_record_response(response);
+    vision_protocol_send_frame(response->seq, response->cmd, response->dir, response->val);
 }
 
-static void vision_send_status(uint8_t seq)
+static void vision_apply_motion_event(const action_controller_result_t *result)
 {
-    uint8_t current_seq = (vision_action.active != 0U) ? vision_action.seq : vision_last_acked_seq;
-
-    vision_protocol_send_frame(seq, VISION_PROTOCOL_CMD_STATUS, vision_get_status(), current_seq);
-}
-
-static uint8_t vision_is_move_valid(const vision_protocol_frame_t *frame)
-{
-    if(frame->val == 0U)
-    {
-        return 0U;
-    }
-
-    return (frame->dir <= VISION_PROTOCOL_MOVE_RIGHT) ? 1U : 0U;
-}
-
-static uint8_t vision_is_rotate_valid(const vision_protocol_frame_t *frame)
-{
-    if(frame->dir > VISION_PROTOCOL_ROTATE_CW)
-    {
-        return 0U;
-    }
-
-    return ((frame->val == VISION_PROTOCOL_ROTATE_90_VAL) ||
-            (frame->val == VISION_PROTOCOL_ROTATE_180_VAL)) ? 1U : 0U;
-}
-
-static ai_status_t vision_start_motion(const mecanum_velocity_t *velocity,
-                                       uint32_t run_ms,
-                                       const vision_protocol_frame_t *frame)
-{
+    action_controller_result_t error_result;
     ai_status_t status;
 
-    if(motion_test_is_armed() == 0U)
+    if(result->motion_event == ACTION_CONTROLLER_MOTION_START)
     {
-        (void)motion_test_arm();
+        status = motion_action_begin(result->action.cmd, result->action.dir, result->action.val);
+        if(status != AI_OK)
+        {
+            error_result = action_controller_complete_error(&vision_action_controller,
+                                                            VISION_PROTOCOL_ERROR_BUSY,
+                                                            (uint8_t)status);
+            vision_send_response(&error_result.response);
+        }
     }
-
-    status = motion_test_set_mecanum(velocity, run_ms);
-    if(status != AI_OK)
+    else if(result->motion_event == ACTION_CONTROLLER_MOTION_STOP_ALL)
     {
-        return status;
+        motion_action_stop_all();
     }
-
-    vision_action.active = 1U;
-    vision_action.seq = frame->seq;
-    vision_action.cmd = frame->cmd;
-    vision_action.dir = frame->dir;
-    vision_action.elapsed_ms = 0;
-    vision_action.run_ms = run_ms;
-    vision_last_acked_seq = frame->seq;
-    vision_error_latched = 0U;
-    vision_send_ack(frame);
-
-    return AI_OK;
-}
-
-static void vision_handle_move(const vision_protocol_frame_t *frame)
-{
-    mecanum_velocity_t velocity = {0, 0, 0};
-    uint32_t run_ms;
-    ai_status_t status;
-
-    vision_debug.move_cmds++;
-
-    if(vision_is_move_valid(frame) == 0U)
+    else if(result->motion_event == ACTION_CONTROLLER_MOTION_RESET_ALL)
     {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
-        return;
-    }
-
-    if(vision_action.active != 0U)
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BUSY, vision_action.seq);
-        return;
-    }
-
-    if(frame->dir == VISION_PROTOCOL_MOVE_UP)
-    {
-        velocity.vx = VISION_MOVE_DUTY;
-    }
-    else if(frame->dir == VISION_PROTOCOL_MOVE_DOWN)
-    {
-        velocity.vx = (int16_t)-VISION_MOVE_DUTY;
-    }
-    else if(frame->dir == VISION_PROTOCOL_MOVE_LEFT)
-    {
-        velocity.vy = VISION_MOVE_DUTY;
-    }
-    else
-    {
-        velocity.vy = (int16_t)-VISION_MOVE_DUTY;
-    }
-
-    run_ms = (uint32_t)frame->val * VISION_MOVE_MS_PER_CM;
-    status = vision_start_motion(&velocity, run_ms, frame);
-    if(status != AI_OK)
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_MOTOR_FAULT, (uint8_t)status);
+        motion_action_reset();
     }
 }
 
-static void vision_handle_rotate(const vision_protocol_frame_t *frame)
+static void vision_dispatch_result(const action_controller_result_t *result)
 {
-    mecanum_velocity_t velocity = {0, 0, 0};
-    uint32_t run_ms;
-    ai_status_t status;
-
-    vision_debug.rotate_cmds++;
-
-    if(vision_is_rotate_valid(frame) == 0U)
+    if(result->motion_event == ACTION_CONTROLLER_MOTION_START)
     {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
+        vision_apply_motion_event(result);
+        if(action_controller_get_status(&vision_action_controller) == VISION_PROTOCOL_STATUS_BUSY)
+        {
+            vision_send_response(&result->response);
+        }
         return;
     }
 
-    if(vision_action.active != 0U)
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BUSY, vision_action.seq);
-        return;
-    }
-
-    velocity.wz = (frame->dir == VISION_PROTOCOL_ROTATE_CCW) ? VISION_ROTATE_DUTY : (int16_t)-VISION_ROTATE_DUTY;
-    run_ms = (frame->val == VISION_PROTOCOL_ROTATE_90_VAL) ? VISION_ROTATE_90_MS : VISION_ROTATE_180_MS;
-
-    status = vision_start_motion(&velocity, run_ms, frame);
-    if(status != AI_OK)
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_MOTOR_FAULT, (uint8_t)status);
-    }
-}
-
-static void vision_handle_stop(const vision_protocol_frame_t *frame)
-{
-    vision_debug.stop_cmds++;
-
-    if((frame->dir != 0U) || (frame->val != 0U))
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
-        return;
-    }
-
-    (void)motion_test_stop();
-    vision_action.active = 0U;
-    vision_last_acked_seq = frame->seq;
-    vision_error_latched = 0U;
-    vision_send_ack(frame);
-}
-
-static void vision_handle_reset(const vision_protocol_frame_t *frame)
-{
-    vision_debug.reset_cmds++;
-
-    if((frame->dir != 0U) || (frame->val != 0U))
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
-        return;
-    }
-
-    (void)motion_test_stop();
-    vision_action.active = 0U;
-    vision_last_acked_seq = 0xFFU;
-    vision_error_latched = 0U;
-    vision_send_ack(frame);
-}
-
-static void vision_handle_query(const vision_protocol_frame_t *frame)
-{
-    vision_debug.query_cmds++;
-
-    if((frame->dir != 0U) || (frame->val != 0U))
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
-        return;
-    }
-
-    vision_send_status(frame->seq);
+    vision_apply_motion_event(result);
+    vision_send_response(&result->response);
 }
 
 static void vision_handle_protocol_frame(const vision_protocol_frame_t *frame)
 {
-    if(frame->seq == vision_last_acked_seq)
-    {
-        vision_send_ack(frame);
-        return;
-    }
+    action_controller_frame_t action_frame;
+    action_controller_result_t result;
 
-    if(frame->cmd == VISION_PROTOCOL_CMD_MOVE)
-    {
-        vision_handle_move(frame);
-    }
-    else if(frame->cmd == VISION_PROTOCOL_CMD_ROTATE)
-    {
-        vision_handle_rotate(frame);
-    }
-    else if(frame->cmd == VISION_PROTOCOL_CMD_STOP)
-    {
-        vision_handle_stop(frame);
-    }
-    else if(frame->cmd == VISION_PROTOCOL_CMD_QUERY)
-    {
-        vision_handle_query(frame);
-    }
-    else if(frame->cmd == VISION_PROTOCOL_CMD_RESET)
-    {
-        vision_handle_reset(frame);
-    }
-    else
-    {
-        vision_send_error(frame->seq, VISION_PROTOCOL_ERROR_BAD_CMD, frame->cmd);
-    }
+    action_frame.seq = frame->seq;
+    action_frame.cmd = frame->cmd;
+    action_frame.dir = frame->dir;
+    action_frame.val = frame->val;
+
+    vision_count_command(frame->cmd);
+    result = action_controller_handle_frame(&vision_action_controller, &action_frame);
+    vision_dispatch_result(&result);
 }
 
 static void vision_handle_protocol_error(uint8_t seq, uint8_t error, uint8_t context)
 {
-    vision_send_error(seq, error, context);
-}
+    action_controller_result_t result;
 
-static void vision_update_action(void)
-{
-    if(vision_action.active == 0U)
-    {
-        return;
-    }
-
-    if((vision_action.elapsed_ms + AI_VISION_PERIOD_MS) < vision_action.run_ms)
-    {
-        vision_action.elapsed_ms += AI_VISION_PERIOD_MS;
-        return;
-    }
-
-    vision_action.elapsed_ms = vision_action.run_ms;
-    vision_send_done(vision_action.seq, vision_action.dir, vision_action.elapsed_ms);
-    vision_action.active = 0U;
+    result = action_controller_handle_protocol_error(&vision_action_controller, seq, error, context);
+    vision_dispatch_result(&result);
 }
 
 ai_status_t vision_module_init(void)
 {
-    vision_last_acked_seq = 0xFFU;
-    vision_error_latched = 0U;
-    vision_action.active = 0U;
-    vision_action.seq = 0;
-    vision_action.cmd = 0;
-    vision_action.dir = 0;
-    vision_action.elapsed_ms = 0;
-    vision_action.run_ms = 0;
+    action_controller_init(&vision_action_controller);
     vision_clear_runtime_debug();
 
     return vision_protocol_init(vision_handle_protocol_frame, vision_handle_protocol_error);
@@ -369,7 +177,6 @@ ai_status_t vision_module_init(void)
 void vision_module_tick(void)
 {
     vision_protocol_tick();
-    vision_update_action();
 }
 
 void vision_debug_get(vision_debug_t *debug)
@@ -389,13 +196,13 @@ void vision_debug_get(vision_debug_t *debug)
     debug->rx_overflows = protocol_debug.rx_overflows;
     debug->frames_ok = protocol_debug.frames_ok;
     debug->bad_frames = protocol_debug.bad_frames;
-    debug->status = vision_get_status();
+    debug->status = action_controller_get_status(&vision_action_controller);
     debug->parser_state = protocol_debug.parser_state;
     debug->last_seq = protocol_debug.last_seq;
     debug->last_cmd = protocol_debug.last_cmd;
     debug->last_dir = protocol_debug.last_dir;
     debug->last_val = protocol_debug.last_val;
-    debug->active_seq = vision_action.active ? vision_action.seq : 0xFFU;
+    debug->active_seq = action_controller_get_active_seq(&vision_action_controller);
     debug->last_rx_count = protocol_debug.last_rx_count;
 
     for(i = 0; i < VISION_DEBUG_LAST_RX_SIZE; i++)

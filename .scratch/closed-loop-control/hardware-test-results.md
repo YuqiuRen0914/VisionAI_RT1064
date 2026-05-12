@@ -37,6 +37,7 @@ stop
 | T02      | 2026-05-12 17:27:56 CST | Codex      | 当前工作区 `AI_Vision_RT1064` | 已烧录，`Verify OK` | Windows `COM3` | `115200 8N1` | Windows 侧串口确认和静态 IMU 采样 |
 | T03      | 2026-05-12 17:33:02 CST | 用户+Codex | 当前工作区 `AI_Vision_RT1064` | 已烧录，`Verify OK` | Windows `COM3` | `115200 8N1` | 用户顺时针旋转约 90 度后读取 IMU  |
 | T04      | 2026-05-12 17:43:43 CST | 用户       | 当前工作区 `AI_Vision_RT1064` | 已烧录，`Verify OK` | Windows `COM3` | `115200 8N1` | 用户粘贴顺时针 90 度连续旋转数据  |
+| T09      | 2026-05-12 22:48:37 CST | Codex      | 当前工作区 `AI_Vision_RT1064` | 已构建 `0 Error(s), 0 Warning(s)`；已烧录 `Verify OK` | Windows `COM3` | `115200 8N1` | 电机开关打开后的 raw PWM 与 speed bench 短测 |
 
 ## 实验 1：烧录确认
 
@@ -514,3 +515,72 @@ Libraries/user/drive/inc/drive_config.h
 - 构建必须是 `0 Error(s)`。
 - 烧录日志必须包含 `Verify OK`。
 - 串口 `help` 仍应列出 `cal enc ...` 和 `imu yawx ...` 命令。
+
+## 实验 7：速度环台架短测
+
+目的：确认电机开关打开后，raw PWM、电机、编码器、speed bench 命令和 5 ms motion tick 的闭环观测链路可以连通。
+
+现场操作：
+
+1. 车保持架空，四个轮子离地。
+2. 打开电机电源开关。
+3. 通过 Windows `COM3` 发送短命令，只测 1 号轮。
+4. 每次测试结束后发送 `speed stop`、`stream off` 和 `status`，确认回到安全状态。
+
+raw PWM 验证命令：
+
+```text
+stream off
+stop
+status
+cal enc zero
+arm
+motor 1 15 500
+cal enc delta
+stop
+```
+
+speed bench 验证命令：
+
+```text
+speed arm
+stream speed
+speed wheel 1 50
+speed wheel 1 0
+speed stop
+stream off
+
+speed arm
+stream speed
+speed wheel 1 200
+speed wheel 1 0
+speed stop
+stream off
+status
+```
+
+raw PWM 结果记录：
+
+| 测试编号 | 轮号 | 命令 | 编码器结果 | 通过/失败 | 备注 |
+| -------- | ---: | ---- | ---------- | --------- | ---- |
+| T09      |    1 | `motor 1 15 500` | `DATA cal_enc_delta w1=12376 w2=0 w3=0 w4=0` | 通过 | 电机开关打开后，1 号轮 raw PWM 与编码器通道连通 |
+
+speed bench 结果记录：
+
+| 测试编号 | 轮号 | 目标速度 | `dt_ms` | 观测速度/编码器 | duty 摘要 | 通过/失败 | 备注 |
+| -------- | ---: | -------- | ------- | ---------------- | --------- | --------- | ---- |
+| T09      |    1 | `50 mm/s` | 5       | `m1=0.0 e1=0` | `d1` 约 `3.7~3.8%` | 通过但不起转 | 输出低于当前静摩擦/起转阈值，不能作为速度环失败判断 |
+| T09      |    1 | `200 mm/s` | 5       | `m1` 约 `-33.1~348.0 mm/s`，`e1` 多数为 `1~21` | `d1` 约 `-6.6~12.5%` | 通过 | 速度环可驱动 1 号轮；5 ms delta 量化噪声明显，后续需要调静摩擦补偿/前馈或低速策略 |
+
+结束状态：
+
+```text
+OK status mode=action_closed_loop armed=0 speed_armed=0 stream=off
+```
+
+判定：
+
+- raw PWM 有明确编码器 delta，说明电机供电、驱动、1 号编码器链路正常。
+- `50 mm/s` 目标下默认 PI 输出过小，暂时低于起转阈值。
+- `200 mm/s` 目标下速度环已能驱动轮子，但低速和 5 ms 采样下的观测噪声会影响控制平滑性。
+- 下一步进入四轮速度环调参前，应先决定是否启用预留的静摩擦补偿/前馈参数，或提高低速段的默认启动策略。

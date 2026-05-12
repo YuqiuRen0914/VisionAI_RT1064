@@ -3,54 +3,28 @@
 #include "ai_config.h"
 #include "drive.h"
 #include "drive_config.h"
-#include "event.h"
 #include "imu660ra.h"
-#include "mecanum.h"
+#include "motion_config.h"
+#include "os_port.h"
 #include "zf_common_interrupt.h"
 
-static int16_t motion_line_offset;
-static int16_t motion_target_speed;
+static motion_mode_t motion_mode;
+static mecanum_duty_t motion_last_duty;
 
-#if AI_OPEN_LOOP_TEST_ENABLE
 static mecanum_duty_t motion_test_duty;
 static uint32_t motion_test_remaining_ms;
 static volatile uint8_t motion_test_armed;
-#endif
+
+static motion_speed_controller_t motion_speed_controller;
+static motion_speed_config_t motion_speed_config;
+static motion_speed_wheel_float_t motion_speed_targets;
+static motion_speed_sample_t motion_speed_last_sample;
 
 static ai_status_t motion_drive_status_to_ai(DriveStatus status)
 {
     return (status == DRIVE_STATUS_OK) ? AI_OK : AI_ERR;
 }
 
-#if AI_MOTOR_TEST_ENABLE
-static uint32_t motor_test_elapsed_ms;
-static uint8_t motor_test_phase;
-
-static void motion_motor_test_tick(void)
-{
-    const uint32_t run_ticks = AI_MOTOR_TEST_RUN_MS / AI_MOTION_PERIOD_MS;
-    const uint32_t stop_ticks = AI_MOTOR_TEST_STOP_MS / AI_MOTION_PERIOD_MS;
-    const uint32_t phase_ticks = run_ticks + stop_ticks;
-    DriveWheelId wheel_id = (DriveWheelId)(motor_test_phase % (uint8_t)DRIVE_WHEEL_COUNT);
-
-    DriveStopAll();
-
-    if(motor_test_elapsed_ms < run_ticks)
-    {
-        (void)DriveSetDuty(wheel_id, AI_MOTOR_TEST_DUTY_PERCENT);
-    }
-
-    motor_test_elapsed_ms++;
-
-    if(motor_test_elapsed_ms >= phase_ticks)
-    {
-        motor_test_elapsed_ms = 0;
-        motor_test_phase = (uint8_t)((motor_test_phase + 1U) % (uint8_t)DRIVE_WHEEL_COUNT);
-    }
-}
-#endif
-
-#if AI_OPEN_LOOP_TEST_ENABLE
 static int16_t motion_abs_i16(int16_t value)
 {
     if(value == INT16_MIN)
@@ -86,6 +60,114 @@ static ai_status_t motion_validate_run_ms(uint32_t run_ms)
     return AI_OK;
 }
 
+static int16_t motion_float_to_duty(float duty_percent)
+{
+    int32_t rounded;
+
+    if(duty_percent >= 0.0f)
+    {
+        rounded = (int32_t)(duty_percent + 0.5f);
+    }
+    else
+    {
+        rounded = (int32_t)(duty_percent - 0.5f);
+    }
+
+    if(rounded > DRIVE_DUTY_PERCENT_MAX)
+    {
+        return DRIVE_DUTY_PERCENT_MAX;
+    }
+
+    if(rounded < -DRIVE_DUTY_PERCENT_MAX)
+    {
+        return (int16_t)-DRIVE_DUTY_PERCENT_MAX;
+    }
+
+    return (int16_t)rounded;
+}
+
+static void motion_zero_duty(mecanum_duty_t *duty)
+{
+    duty->motor1 = 0;
+    duty->motor2 = 0;
+    duty->motor3 = 0;
+    duty->motor4 = 0;
+}
+
+static void motion_zero_speed_targets(void)
+{
+    motion_speed_targets.wheel1 = 0.0f;
+    motion_speed_targets.wheel2 = 0.0f;
+    motion_speed_targets.wheel3 = 0.0f;
+    motion_speed_targets.wheel4 = 0.0f;
+}
+
+static void motion_zero_speed_sample(motion_speed_sample_t *sample)
+{
+    sample->target_mm_s.wheel1 = 0.0f;
+    sample->target_mm_s.wheel2 = 0.0f;
+    sample->target_mm_s.wheel3 = 0.0f;
+    sample->target_mm_s.wheel4 = 0.0f;
+    sample->measured_mm_s.wheel1 = 0.0f;
+    sample->measured_mm_s.wheel2 = 0.0f;
+    sample->measured_mm_s.wheel3 = 0.0f;
+    sample->measured_mm_s.wheel4 = 0.0f;
+    sample->duty_percent.wheel1 = 0.0f;
+    sample->duty_percent.wheel2 = 0.0f;
+    sample->duty_percent.wheel3 = 0.0f;
+    sample->duty_percent.wheel4 = 0.0f;
+    sample->encoder_delta.wheel1 = 0;
+    sample->encoder_delta.wheel2 = 0;
+    sample->encoder_delta.wheel3 = 0;
+    sample->encoder_delta.wheel4 = 0;
+    sample->dt_ms = 0;
+}
+
+static void motion_apply_duty(int16_t wheel1, int16_t wheel2, int16_t wheel3, int16_t wheel4)
+{
+    motion_last_duty.motor1 = wheel1;
+    motion_last_duty.motor2 = wheel2;
+    motion_last_duty.motor3 = wheel3;
+    motion_last_duty.motor4 = wheel4;
+    (void)DriveSetAllDuty(wheel1, wheel2, wheel3, wheel4);
+}
+
+static void motion_stop_drive(void)
+{
+    motion_zero_duty(&motion_test_duty);
+    motion_test_remaining_ms = 0;
+    motion_speed_stop(&motion_speed_controller);
+    motion_zero_speed_targets();
+    motion_apply_duty(0, 0, 0, 0);
+}
+
+static void motion_load_speed_defaults(void)
+{
+    motion_speed_default_config(&motion_speed_config);
+    motion_speed_config.kp = MOTION_SPEED_KP_DEFAULT;
+    motion_speed_config.ki = MOTION_SPEED_KI_DEFAULT;
+    motion_speed_config.kd = MOTION_SPEED_KD_DEFAULT;
+    motion_speed_config.duty_limit_percent = MOTION_CLOSED_LOOP_DUTY_LIMIT_PERCENT;
+    motion_speed_config.max_speed_mm_s = MOTION_CLOSED_LOOP_MAX_SPEED_MM_S;
+    motion_speed_config.feedforward_duty_per_mm_s = MOTION_SPEED_FEEDFORWARD_DEFAULT;
+    motion_speed_config.static_duty_percent = MOTION_SPEED_STATIC_DUTY_DEFAULT;
+    motion_speed_config.static_threshold_mm_s = MOTION_SPEED_STATIC_THRESHOLD_MM_S;
+    motion_speed_config.wheel_diameter_mm = (float)DRIVE_WHEEL_DIAMETER_MM;
+    motion_speed_config.counts_per_rev_x100[0] = DRIVE_WHEEL1_COUNTS_PER_REV_X100;
+    motion_speed_config.counts_per_rev_x100[1] = DRIVE_WHEEL2_COUNTS_PER_REV_X100;
+    motion_speed_config.counts_per_rev_x100[2] = DRIVE_WHEEL3_COUNTS_PER_REV_X100;
+    motion_speed_config.counts_per_rev_x100[3] = DRIVE_WHEEL4_COUNTS_PER_REV_X100;
+}
+
+static void motion_drive_total_to_speed_total(const DriveEncoderTotal *drive_total,
+                                              motion_speed_encoder_total_t *speed_total)
+{
+    speed_total->wheel1 = drive_total->wheel1;
+    speed_total->wheel2 = drive_total->wheel2;
+    speed_total->wheel3 = drive_total->wheel3;
+    speed_total->wheel4 = drive_total->wheel4;
+}
+
 static void motion_test_apply_locked(const mecanum_duty_t *duty, uint32_t run_ms)
 {
     uint32_t primask = interrupt_global_disable();
@@ -95,10 +177,7 @@ static void motion_test_apply_locked(const mecanum_duty_t *duty, uint32_t run_ms
 
     if(motion_test_remaining_ms == 0U)
     {
-        motion_test_duty.motor1 = 0;
-        motion_test_duty.motor2 = 0;
-        motion_test_duty.motor3 = 0;
-        motion_test_duty.motor4 = 0;
+        motion_zero_duty(&motion_test_duty);
     }
 
     interrupt_global_enable(primask);
@@ -113,10 +192,7 @@ static void motion_test_tick(void)
     if(motion_test_armed == 0U)
     {
         motion_test_remaining_ms = 0;
-        motion_test_duty.motor1 = 0;
-        motion_test_duty.motor2 = 0;
-        motion_test_duty.motor3 = 0;
-        motion_test_duty.motor4 = 0;
+        motion_zero_duty(&motion_test_duty);
     }
     else if(motion_test_remaining_ms > AI_MOTION_PERIOD_MS)
     {
@@ -125,40 +201,54 @@ static void motion_test_tick(void)
     else if(motion_test_remaining_ms != 0U)
     {
         motion_test_remaining_ms = 0;
-        motion_test_duty.motor1 = 0;
-        motion_test_duty.motor2 = 0;
-        motion_test_duty.motor3 = 0;
-        motion_test_duty.motor4 = 0;
+        motion_zero_duty(&motion_test_duty);
     }
 
     duty = motion_test_duty;
     interrupt_global_enable(primask);
 
-    (void)DriveSetAllDuty(duty.motor1,
-                          duty.motor2,
-                          duty.motor3,
-                          duty.motor4);
+    motion_apply_duty(duty.motor1, duty.motor2, duty.motor3, duty.motor4);
 }
-#endif
+
+static void motion_speed_bench_tick(void)
+{
+    DriveEncoderTotal drive_total;
+    motion_speed_encoder_total_t speed_total;
+    uint32_t now_ms;
+
+    if(DriveGetAllEncoderTotal(&drive_total) != DRIVE_STATUS_OK)
+    {
+        motion_apply_duty(0, 0, 0, 0);
+        return;
+    }
+
+    motion_drive_total_to_speed_total(&drive_total, &speed_total);
+    now_ms = os_port_now_ms();
+
+    if(motion_speed_update(&motion_speed_controller,
+                           &speed_total,
+                           now_ms,
+                           &motion_speed_last_sample) == AI_OK)
+    {
+        motion_apply_duty(motion_float_to_duty(motion_speed_last_sample.duty_percent.wheel1),
+                          motion_float_to_duty(motion_speed_last_sample.duty_percent.wheel2),
+                          motion_float_to_duty(motion_speed_last_sample.duty_percent.wheel3),
+                          motion_float_to_duty(motion_speed_last_sample.duty_percent.wheel4));
+    }
+}
 
 ai_status_t motion_module_init(void)
 {
     ai_status_t status;
 
-    motion_line_offset = 0;
-    motion_target_speed = 0;
-#if AI_MOTOR_TEST_ENABLE
-    motor_test_elapsed_ms = 0;
-    motor_test_phase = 0;
-#endif
-#if AI_OPEN_LOOP_TEST_ENABLE
-    motion_test_duty.motor1 = 0;
-    motion_test_duty.motor2 = 0;
-    motion_test_duty.motor3 = 0;
-    motion_test_duty.motor4 = 0;
+    motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
+    motion_zero_duty(&motion_last_duty);
+    motion_zero_duty(&motion_test_duty);
     motion_test_remaining_ms = 0;
     motion_test_armed = 0;
-#endif
+    motion_load_speed_defaults();
+    motion_zero_speed_targets();
+    motion_zero_speed_sample(&motion_speed_last_sample);
 
     status = motion_drive_status_to_ai(DriveInit());
     if(status != AI_OK)
@@ -166,58 +256,44 @@ ai_status_t motion_module_init(void)
         return status;
     }
 
+    if(motion_speed_init(&motion_speed_controller, &motion_speed_config) != AI_OK)
+    {
+        return AI_ERR;
+    }
+
     return Imu660raInit();
 }
 
 void motion_module_tick(void)
 {
-#if AI_MOTOR_TEST_ENABLE
-    motion_motor_test_tick();
-#elif AI_OPEN_LOOP_TEST_ENABLE
-    motion_test_tick();
-#else
-    event_msg_t event;
-    mecanum_duty_t duty;
-    mecanum_velocity_t velocity;
-
-    while(event_poll(&event) == AI_OK)
+    if(motion_mode == MOTION_MODE_OPEN_LOOP_TEST)
     {
-        if(event.id == EVENT_ID_VISION_RESULT)
-        {
-            motion_line_offset = (int16_t)event.value0;
-            motion_target_speed = (int16_t)event.value1;
-        }
+        motion_test_tick();
     }
-
-    velocity.vx = motion_target_speed;
-    velocity.vy = 0;
-    velocity.wz = (int16_t)-motion_line_offset;
-
-    if((mecanum_solve_duty(&velocity, &duty) == AI_OK) &&
-       (mecanum_normalize_duty(&duty, DRIVE_DUTY_PERCENT_MAX) == AI_OK))
+    else if(motion_mode == MOTION_MODE_SPEED_BENCH)
     {
-        (void)DriveSetAllDuty(duty.motor1,
-                              duty.motor2,
-                              duty.motor3,
-                              duty.motor4);
+        motion_speed_bench_tick();
     }
-#endif
 }
 
-#if AI_OPEN_LOOP_TEST_ENABLE
+motion_mode_t motion_get_mode(void)
+{
+    return motion_mode;
+}
+
 ai_status_t motion_test_arm(void)
 {
     uint32_t primask = interrupt_global_disable();
 
-    motion_test_duty.motor1 = 0;
-    motion_test_duty.motor2 = 0;
-    motion_test_duty.motor3 = 0;
-    motion_test_duty.motor4 = 0;
+    motion_mode = MOTION_MODE_OPEN_LOOP_TEST;
+    motion_zero_duty(&motion_test_duty);
     motion_test_remaining_ms = 0;
     motion_test_armed = 1U;
     interrupt_global_enable(primask);
 
-    DriveStopAll();
+    motion_speed_stop(&motion_speed_controller);
+    motion_zero_speed_targets();
+    motion_apply_duty(0, 0, 0, 0);
 
     return AI_OK;
 }
@@ -229,22 +305,20 @@ ai_status_t motion_test_disarm(void)
 
 uint8_t motion_test_is_armed(void)
 {
-    return motion_test_armed;
+    return ((motion_mode == MOTION_MODE_OPEN_LOOP_TEST) && (motion_test_armed != 0U)) ? 1U : 0U;
 }
 
 ai_status_t motion_test_stop(void)
 {
     uint32_t primask = interrupt_global_disable();
 
-    motion_test_duty.motor1 = 0;
-    motion_test_duty.motor2 = 0;
-    motion_test_duty.motor3 = 0;
-    motion_test_duty.motor4 = 0;
+    motion_zero_duty(&motion_test_duty);
     motion_test_remaining_ms = 0;
     motion_test_armed = 0;
+    motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
     interrupt_global_enable(primask);
 
-    DriveStopAll();
+    motion_stop_drive();
 
     return AI_OK;
 }
@@ -264,7 +338,7 @@ ai_status_t motion_test_set_motor(uint8_t wheel_id, int16_t duty_percent, uint32
         return AI_ERR_INVALID_ARG;
     }
 
-    if(motion_test_armed == 0U)
+    if(motion_test_is_armed() == 0U)
     {
         return AI_ERR_BUSY;
     }
@@ -308,7 +382,7 @@ ai_status_t motion_test_set_all(int16_t wheel1_duty,
         return AI_ERR_INVALID_ARG;
     }
 
-    if(motion_test_armed == 0U)
+    if(motion_test_is_armed() == 0U)
     {
         return AI_ERR_BUSY;
     }
@@ -344,7 +418,7 @@ ai_status_t motion_test_set_mecanum(const mecanum_velocity_t *velocity, uint32_t
         return AI_ERR_INVALID_ARG;
     }
 
-    if(motion_test_armed == 0U)
+    if(motion_test_is_armed() == 0U)
     {
         return AI_ERR_BUSY;
     }
@@ -382,7 +456,167 @@ void motion_test_get_duty(mecanum_duty_t *duty)
     }
 
     primask = interrupt_global_disable();
-    *duty = motion_test_duty;
+    *duty = motion_last_duty;
     interrupt_global_enable(primask);
 }
-#endif
+
+ai_status_t motion_speed_bench_arm(void)
+{
+    uint32_t primask;
+
+    if(motion_speed_init(&motion_speed_controller, &motion_speed_config) != AI_OK)
+    {
+        return AI_ERR;
+    }
+
+    motion_zero_speed_targets();
+    motion_zero_speed_sample(&motion_speed_last_sample);
+    (void)motion_speed_set_targets(&motion_speed_controller, 0.0f, 0.0f, 0.0f, 0.0f);
+
+    primask = interrupt_global_disable();
+    motion_mode = MOTION_MODE_SPEED_BENCH;
+    motion_test_armed = 0U;
+    motion_zero_duty(&motion_test_duty);
+    motion_test_remaining_ms = 0;
+    interrupt_global_enable(primask);
+
+    motion_apply_duty(0, 0, 0, 0);
+    return AI_OK;
+}
+
+ai_status_t motion_speed_bench_stop(void)
+{
+    motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
+    motion_stop_drive();
+    return AI_OK;
+}
+
+uint8_t motion_speed_bench_is_armed(void)
+{
+    return (motion_mode == MOTION_MODE_SPEED_BENCH) ? 1U : 0U;
+}
+
+ai_status_t motion_speed_bench_set_wheel(uint8_t wheel_id, float target_mm_s)
+{
+    if((wheel_id < 1U) || (wheel_id > (uint8_t)DRIVE_WHEEL_COUNT))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(motion_speed_bench_is_armed() == 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    if(wheel_id == 1U)
+    {
+        motion_speed_targets.wheel1 = target_mm_s;
+    }
+    else if(wheel_id == 2U)
+    {
+        motion_speed_targets.wheel2 = target_mm_s;
+    }
+    else if(wheel_id == 3U)
+    {
+        motion_speed_targets.wheel3 = target_mm_s;
+    }
+    else
+    {
+        motion_speed_targets.wheel4 = target_mm_s;
+    }
+
+    return motion_speed_set_targets(&motion_speed_controller,
+                                    motion_speed_targets.wheel1,
+                                    motion_speed_targets.wheel2,
+                                    motion_speed_targets.wheel3,
+                                    motion_speed_targets.wheel4);
+}
+
+ai_status_t motion_speed_bench_set_all(float wheel1_mm_s,
+                                       float wheel2_mm_s,
+                                       float wheel3_mm_s,
+                                       float wheel4_mm_s)
+{
+    if(motion_speed_bench_is_armed() == 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    motion_speed_targets.wheel1 = wheel1_mm_s;
+    motion_speed_targets.wheel2 = wheel2_mm_s;
+    motion_speed_targets.wheel3 = wheel3_mm_s;
+    motion_speed_targets.wheel4 = wheel4_mm_s;
+
+    return motion_speed_set_targets(&motion_speed_controller,
+                                    wheel1_mm_s,
+                                    wheel2_mm_s,
+                                    wheel3_mm_s,
+                                    wheel4_mm_s);
+}
+
+ai_status_t motion_speed_bench_set_pid(float kp, float ki, float kd)
+{
+    if((kp < 0.0f) || (ki < 0.0f) || (kd < 0.0f))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_speed_config.kp = kp;
+    motion_speed_config.ki = ki;
+    motion_speed_config.kd = kd;
+
+    return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
+}
+
+ai_status_t motion_speed_bench_set_limits(float duty_limit_percent, float max_speed_mm_s)
+{
+    if((duty_limit_percent <= 0.0f) ||
+       (duty_limit_percent > (float)DRIVE_DUTY_PERCENT_MAX) ||
+       (max_speed_mm_s <= 0.0f))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_speed_config.duty_limit_percent = duty_limit_percent;
+    motion_speed_config.max_speed_mm_s = max_speed_mm_s;
+
+    return motion_speed_set_config(&motion_speed_controller, &motion_speed_config);
+}
+
+void motion_speed_bench_get_sample(motion_speed_sample_t *sample)
+{
+    if(sample == 0)
+    {
+        return;
+    }
+
+    *sample = motion_speed_last_sample;
+}
+
+ai_status_t motion_action_begin(uint8_t cmd, uint8_t dir, uint8_t val)
+{
+    (void)cmd;
+    (void)dir;
+    (void)val;
+
+    if(motion_mode != MOTION_MODE_ACTION_CLOSED_LOOP)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    motion_stop_drive();
+    motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
+    return AI_OK;
+}
+
+void motion_action_stop_all(void)
+{
+    motion_mode = MOTION_MODE_ACTION_CLOSED_LOOP;
+    motion_test_armed = 0U;
+    motion_stop_drive();
+}
+
+void motion_action_reset(void)
+{
+    motion_action_stop_all();
+}

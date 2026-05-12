@@ -405,10 +405,15 @@
           <Files>
             <File><FileName>vision.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\perception\vision.c</FilePath></File>
             <File><FileName>vision.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\perception\vision.h</FilePath></File>
+            <File><FileName>action_controller.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\perception\action_controller.c</FilePath></File>
+            <File><FileName>action_controller.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\perception\action_controller.h</FilePath></File>
             <File><FileName>vision_protocol.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\perception\vision_protocol.c</FilePath></File>
             <File><FileName>vision_protocol.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\perception\vision_protocol.h</FilePath></File>
             <File><FileName>motion.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion.c</FilePath></File>
             <File><FileName>motion.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion.h</FilePath></File>
+            <File><FileName>motion_config.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_config.h</FilePath></File>
+            <File><FileName>motion_speed.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\motion_speed.c</FilePath></File>
+            <File><FileName>motion_speed.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\motion_speed.h</FilePath></File>
             <File><FileName>mecanum.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\motion\mecanum.c</FilePath></File>
             <File><FileName>mecanum.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\motion\mecanum.h</FilePath></File>
             <File><FileName>calibration_telemetry.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\calibration\calibration_telemetry.c</FilePath></File>

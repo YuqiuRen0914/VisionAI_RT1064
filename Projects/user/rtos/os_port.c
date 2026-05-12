@@ -45,6 +45,15 @@ void os_port_delay_ms(uint32_t ms)
 #endif
 }
 
+uint32_t os_port_now_ms(void)
+{
+#if AI_USE_FREERTOS
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+#else
+    return 0U;
+#endif
+}
+
 ai_status_t os_port_queue_create(os_queue_t *queue, uint32_t item_count, uint32_t item_size)
 {
     if(queue == NULL)
