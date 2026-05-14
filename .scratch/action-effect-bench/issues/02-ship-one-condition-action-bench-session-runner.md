@@ -1,6 +1,6 @@
 # Ship a one-condition action bench session runner
 
-Status: ready-for-agent
+Status: done
 Type: enhancement
 
 ## Parent
@@ -26,14 +26,13 @@ This is the first tracer-bullet host workflow. It does not yet need the full can
 
 ## Acceptance criteria
 
-- [ ] The host bench can run at least one selected action condition end to end over the existing **Mac-to-Windows serial bench workflow**
-- [ ] The bench requires `firmware_label`, `flash_status`, `surface_label`, and `power_label` before starting
-- [ ] Each run performs `vision sim reset`, bounded `stream speed`, `vision` completion polling, and final `status`/`vision` capture
-- [ ] Each run prompts for structured manual outcome fields immediately after completion
-- [ ] The session emits raw serial output plus JSON and Markdown artifacts under `.scratch/action-effect-bench/`
-- [ ] The workflow treats build/flash as external preconditions rather than bench-script responsibilities
+- [x] The host bench can run at least one selected action condition end to end over the existing **Mac-to-Windows serial bench workflow**
+- [x] The bench requires `firmware_label`, `flash_status`, `surface_label`, and `power_label` before starting
+- [x] Each run performs `vision sim reset`, bounded `stream speed`, `vision` completion polling, and final `status`/`vision` capture
+- [x] Each run prompts for structured manual outcome fields immediately after completion
+- [x] The session emits raw serial output plus JSON and Markdown artifacts under `.scratch/action-effect-bench/`
+- [x] The workflow treats build/flash as external preconditions rather than bench-script responsibilities
 
 ## Blocked by
 
 - [01-add-action-tuning-command-path.md](/Volumes/[C] Windows 11/Users/jjp/Documents/Keil-work/AI_Vision_RT1064/.scratch/action-effect-bench/issues/01-add-action-tuning-command-path.md)
-

@@ -33,6 +33,10 @@
 ./tools/bench/speed-loop-bench.py --plan-only
 ```
 
+```bash
+./tools/bench/action-effect-bench.py --session-id AE01 --firmware-label fw --flash-status flashed --surface-label mat --power-label battery --action move --direction up --value 20 --plan-only
+```
+
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\tools\windows\enable-openssh-windows.ps1
 ```
