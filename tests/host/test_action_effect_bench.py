@@ -38,6 +38,9 @@ class FakeRemote:
                 "OK vision sim move\n"
                 ">>> vision\n"
                 "OK vision status=1 parser=0 active_seq=1\n"
+                ">>> status\n"
+                "OK status mode=action_closed_loop armed=0 speed_armed=1 stream=on\n"
+                "DATA action cmd=1 dir=1 val=20 elapsed=180 stable=0 blocked=0 vx=90.0 vy=2.0 rot=1.0\n"
                 ">>> vision\n"
                 "OK vision status=0 parser=0 active_seq=1\n"
                 ">>> stream off\n"
@@ -54,6 +57,75 @@ class FakeRemote:
 
 
 class ActionEffectBenchTests(unittest.TestCase):
+    def test_external_thresholds_compute_run_pass_fail_and_missing_blocks_acceptance(self):
+        bench = load_module()
+
+        move_condition = bench.CONDITIONS_BY_ID["move_short_up"]
+        move_observation = {
+            "manual_truth_state": "provided",
+            "actual_travel_mm": 205.0,
+            "lateral_drift_mm": -8.0,
+            "end_heading_error_deg": 2.5,
+            "quality": "good",
+            "notes": "",
+        }
+        self.assertEqual(
+            bench.evaluate_observation_thresholds(move_condition, move_observation)["pass_fail"],
+            "pass",
+        )
+
+        rotate_condition = bench.CONDITIONS_BY_ID["rotate_90_cw"]
+        rotate_observation = {
+            "manual_truth_state": "provided",
+            "actual_angle_deg": 95.0,
+            "translation_crosstalk_mm": 12.0,
+            "end_heading_error_deg": 2.0,
+            "quality": "acceptable",
+            "notes": "overshot",
+        }
+        rotate_result = bench.evaluate_observation_thresholds(rotate_condition, rotate_observation)
+        self.assertEqual(rotate_result["pass_fail"], "fail")
+        self.assertIn("actual_angle_error_deg", rotate_result["failed_metrics"])
+
+        missing_result = bench.evaluate_observation_thresholds(move_condition, {"manual_truth_state": "missing"})
+        self.assertEqual(missing_result["pass_fail"], "missing")
+        self.assertFalse(missing_result["acceptance_eligible"])
+
+    def test_run_evidence_extracts_status_timeline_and_final_board_snapshot(self):
+        bench = load_module()
+        raw_text = (
+            "### ACTION_RUN_BEGIN run=1 condition=move_short_up\n"
+            ">>> vision sim move up 20\n"
+            "OK vision sim move\n"
+            ">>> vision\n"
+            "OK vision status=1 parser=0 active_seq=1\n"
+            ">>> status\n"
+            "OK status mode=action_closed_loop armed=0 speed_armed=1 stream=on\n"
+            "DATA action cmd=1 dir=1 val=20 elapsed=100 stable=0 blocked=0 vx=120.5 vy=0.0 rot=2.0\n"
+            ">>> vision\n"
+            "OK vision status=1 parser=0 active_seq=1\n"
+            ">>> status\n"
+            "OK status mode=action_closed_loop armed=0 speed_armed=1 stream=on\n"
+            "DATA action cmd=1 dir=1 val=20 elapsed=220 stable=20 blocked=0 vx=80.0 vy=0.0 rot=1.0\n"
+            ">>> vision\n"
+            "OK vision status=0 parser=0 active_seq=1\n"
+            ">>> stream off\n"
+            "OK stream off\n"
+            ">>> vision\n"
+            "OK vision status=0 parser=0 active_seq=1\n"
+            ">>> status\n"
+            "OK status mode=action_closed_loop armed=0 speed_armed=0 stream=off\n"
+            "DATA action cmd=1 dir=1 val=20 elapsed=620 stable=120 blocked=0 vx=0.0 vy=0.0 rot=0.0\n"
+            "### ACTION_RUN_END run=1 condition=move_short_up final=IDLE\n"
+        )
+
+        evidence = bench.extract_run_evidence(raw_text)
+
+        self.assertEqual([sample["action"]["elapsed"] for sample in evidence["status_timeline"]], [100, 220])
+        self.assertEqual(evidence["final_board_snapshot"]["vision"]["status"], "IDLE")
+        self.assertEqual(evidence["final_board_snapshot"]["status"]["stream"], "off")
+        self.assertEqual(evidence["final_board_snapshot"]["action"]["stable"], 120)
+
     def test_full_matrix_plan_uses_canonical_round_robin_order(self):
         bench = load_module()
 
@@ -168,7 +240,7 @@ class ActionEffectBenchTests(unittest.TestCase):
                 "--action-heading",
                 "3.0 80",
             ]
-            answers = iter(["205", "3", "-1", "pass", "good", "straight enough"])
+            answers = iter(["record", "205", "3", "-1", "good", "straight enough"])
             with patch("builtins.input", lambda _prompt="": next(answers)), patch("builtins.print"):
                 exit_code = bench.main(argv, remote_runner=remote)
 
@@ -214,7 +286,17 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertEqual(artifact["conditions"][0]["id"], "move_short_up")
             self.assertEqual(artifact["runs"][0]["observation"]["actual_travel_mm"], 205.0)
             self.assertEqual(artifact["runs"][0]["observation"]["pass_fail"], "pass")
-            self.assertIn("Structured Action-Effect Observation", summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact["runs"][0]["threshold_evaluation"]["pass_fail"], "pass")
+            self.assertEqual(artifact["runs"][0]["status_timeline"][0]["action"]["elapsed"], 180)
+            self.assertEqual(
+                artifact["runs"][0]["final_board_snapshot"]["status"]["mode"],
+                "action_closed_loop",
+            )
+            summary = summary_path.read_text(encoding="utf-8")
+            self.assertIn("Structured Action-Effect Observation", summary)
+            self.assertIn("Threshold Evaluation", summary)
+            self.assertIn("Action Status Timeline", summary)
+            self.assertIn("Final Board Snapshot", summary)
 
     def test_session_can_record_more_than_one_run(self):
         bench = load_module()
@@ -245,16 +327,16 @@ class ActionEffectBenchTests(unittest.TestCase):
             ]
             answers = iter(
                 [
+                    "record",
                     "88",
                     "5",
                     "-2",
-                    "pass",
                     "acceptable",
                     "slight undershoot",
+                    "record",
                     "91",
                     "4",
                     "1",
-                    "pass",
                     "good",
                     "clean",
                 ]
@@ -273,6 +355,46 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertEqual(artifact["conditions"][0]["id"], "rotate_90_cw")
             self.assertEqual(len(artifact["runs"]), 2)
             self.assertEqual(artifact["runs"][1]["observation"]["actual_angle_deg"], 91.0)
+
+    def test_missing_manual_observation_is_explicit_and_blocks_acceptance(self):
+        bench = load_module()
+        remote = FakeRemote()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            argv = [
+                "--artifact-root",
+                tmp,
+                "--session-id",
+                "AE101",
+                "--firmware-label",
+                "fw-test",
+                "--flash-status",
+                "flashed",
+                "--surface-label",
+                "mat",
+                "--power-label",
+                "bench-supply",
+                "--action",
+                "move",
+                "--direction",
+                "up",
+                "--value",
+                "20",
+                "--runs",
+                "1",
+            ]
+            answers = iter(["missing", "operator could not measure"])
+            with patch("builtins.input", lambda _prompt="": next(answers)), patch("builtins.print"):
+                exit_code = bench.main(argv, remote_runner=remote)
+
+            self.assertEqual(exit_code, 0)
+            artifact = json.loads(
+                (Path(tmp) / "sessions" / "AE101" / "AE101.json").read_text(encoding="utf-8")
+            )
+            self.assertFalse(artifact["session"]["acceptance_eligible"])
+            self.assertIn("missing_manual_observation", artifact["session"]["acceptance_blockers"])
+            self.assertEqual(artifact["runs"][0]["observation"]["manual_truth_state"], "missing")
+            self.assertEqual(artifact["runs"][0]["observation"]["pass_fail"], "missing")
 
 
 if __name__ == "__main__":

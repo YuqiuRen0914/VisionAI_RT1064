@@ -79,6 +79,28 @@ CANONICAL_CONDITIONS: tuple[ActionCondition, ...] = (
 )
 
 CONDITIONS_BY_ID = {condition.id: condition for condition in CANONICAL_CONDITIONS}
+EXTERNAL_THRESHOLDS = {
+    "MOVE short": {
+        "actual_travel_error_mm": 10.0,
+        "lateral_drift_mm": 10.0,
+        "end_heading_error_deg": 3.0,
+    },
+    "MOVE long": {
+        "actual_travel_error_mm": 30.0,
+        "lateral_drift_mm": 20.0,
+        "end_heading_error_deg": 5.0,
+    },
+    "ROTATE 90": {
+        "actual_angle_error_deg": 3.0,
+        "translation_crosstalk_mm": 20.0,
+        "end_heading_error_deg": 3.0,
+    },
+    "ROTATE 180": {
+        "actual_angle_error_deg": 5.0,
+        "translation_crosstalk_mm": 30.0,
+        "end_heading_error_deg": 5.0,
+    },
+}
 BUCKET_ALIASES = {
     "move-short": "MOVE short",
     "move_short": "MOVE short",
@@ -93,6 +115,47 @@ BUCKET_ALIASES = {
     "rotate_180": "ROTATE 180",
     "ROTATE 180": "ROTATE 180",
 }
+
+
+def evaluate_observation_thresholds(
+    condition: ActionCondition,
+    observation: dict[str, object],
+) -> dict[str, object]:
+    if observation.get("manual_truth_state") == "missing":
+        return {
+            "pass_fail": "missing",
+            "acceptance_eligible": False,
+            "failed_metrics": ["manual_observation_missing"],
+        }
+
+    thresholds = EXTERNAL_THRESHOLDS[condition.bucket]
+    failed_metrics: list[str] = []
+    metrics: dict[str, float] = {}
+
+    if condition.action == "move":
+        expected_travel_mm = float(condition.value * 10)
+        actual_travel_mm = float(observation["actual_travel_mm"])
+        metrics["actual_travel_error_mm"] = actual_travel_mm - expected_travel_mm
+        metrics["lateral_drift_mm"] = float(observation["lateral_drift_mm"])
+        metrics["end_heading_error_deg"] = float(observation["end_heading_error_deg"])
+    else:
+        expected_angle_deg = float(condition.value)
+        actual_angle_deg = float(observation["actual_angle_deg"])
+        metrics["actual_angle_error_deg"] = actual_angle_deg - expected_angle_deg
+        metrics["translation_crosstalk_mm"] = float(observation["translation_crosstalk_mm"])
+        metrics["end_heading_error_deg"] = float(observation["end_heading_error_deg"])
+
+    for metric, value in metrics.items():
+        if abs(value) > thresholds[metric]:
+            failed_metrics.append(metric)
+
+    return {
+        "pass_fail": "pass" if not failed_metrics else "fail",
+        "acceptance_eligible": not failed_metrics,
+        "failed_metrics": failed_metrics,
+        "metrics": metrics,
+        "thresholds": thresholds,
+    }
 
 
 def ps_quote(value: str) -> str:
@@ -273,6 +336,104 @@ def parse_vision_status(text: str) -> str:
     return status
 
 
+def parse_scalar(value: str) -> object:
+    try:
+        number = float(value)
+    except ValueError:
+        return value
+    if abs(number - round(number)) < 0.0001:
+        return int(round(number))
+    return number
+
+
+def parse_key_values(text: str) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    for token in text.split():
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        fields[key] = parse_scalar(value)
+    return fields
+
+
+def vision_status_label(value: object) -> str:
+    status = str(value)
+    if status == "0":
+        return "IDLE"
+    if status == "1":
+        return "BUSY"
+    if status == "2":
+        return "ERROR"
+    return status
+
+
+def iter_command_blocks(text: str) -> list[tuple[str, list[str]]]:
+    blocks: list[tuple[str, list[str]]] = []
+    current_cmd: str | None = None
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith(">>> "):
+            if current_cmd is not None:
+                blocks.append((current_cmd, current_lines))
+            current_cmd = line[4:].strip()
+            current_lines = []
+        elif current_cmd is not None and not line.startswith("### "):
+            current_lines.append(line)
+    if current_cmd is not None:
+        blocks.append((current_cmd, current_lines))
+    return blocks
+
+
+def parse_status_block(lines: list[str]) -> tuple[dict[str, object], dict[str, object]]:
+    status: dict[str, object] = {}
+    action: dict[str, object] = {}
+    for line in lines:
+        if line.startswith("OK status "):
+            status = parse_key_values(line[len("OK status ") :])
+        elif line.startswith("DATA action "):
+            action = parse_key_values(line[len("DATA action ") :])
+    return status, action
+
+
+def parse_vision_block(lines: list[str]) -> dict[str, object]:
+    for line in lines:
+        if line.startswith("OK vision "):
+            fields = parse_key_values(line[len("OK vision ") :])
+            if "status" in fields:
+                fields["status"] = vision_status_label(fields["status"])
+            return fields
+    return {}
+
+
+def extract_run_evidence(text: str) -> dict[str, object]:
+    status_timeline: list[dict[str, object]] = []
+    final_board_snapshot: dict[str, object] = {"vision": {}, "status": {}, "action": {}}
+    after_stream_off = False
+
+    for command, lines in iter_command_blocks(text):
+        if command == "stream off":
+            after_stream_off = True
+            continue
+        if command == "vision":
+            vision = parse_vision_block(lines)
+            if after_stream_off:
+                final_board_snapshot["vision"] = vision
+            continue
+        if command == "status":
+            status, action = parse_status_block(lines)
+            sample = {"status": status, "action": action}
+            if after_stream_off:
+                final_board_snapshot["status"] = status
+                final_board_snapshot["action"] = action
+            else:
+                status_timeline.append(sample)
+
+    return {
+        "status_timeline": status_timeline,
+        "final_board_snapshot": final_board_snapshot,
+    }
+
+
 def build_remote_script(
     args: argparse.Namespace,
     condition: ActionCondition,
@@ -389,19 +550,30 @@ def prompt_float(prompt: str) -> float:
 
 def prompt_observation(condition: ActionCondition) -> dict[str, object]:
     print("Structured action-effect observation")
+    state = prompt_choice("manual_observation [record/missing]: ", {"record", "missing"})
+    if state == "missing":
+        return {
+            "manual_truth_state": "missing",
+            "measurement_semantics": "command_frame_final_result",
+            "notes": input("missing_observation_notes: ").strip(),
+        }
+
     if condition.action == "move":
         observation: dict[str, object] = {
+            "manual_truth_state": "provided",
+            "measurement_semantics": "command_frame_final_result",
             "actual_travel_mm": prompt_float("actual_travel_mm: "),
             "lateral_drift_mm": prompt_float("lateral_drift_mm: "),
             "end_heading_error_deg": prompt_float("end_heading_error_deg: "),
         }
     else:
         observation = {
+            "manual_truth_state": "provided",
+            "measurement_semantics": "command_frame_final_result",
             "actual_angle_deg": prompt_float("actual_angle_deg: "),
             "translation_crosstalk_mm": prompt_float("translation_crosstalk_mm: "),
             "end_heading_error_deg": prompt_float("end_heading_error_deg: "),
         }
-    observation["pass_fail"] = prompt_choice("pass_fail [pass/fail]: ", {"pass", "fail"})
     observation["quality"] = prompt_choice(
         "quality [good/acceptable/bad]: ", {"good", "acceptable", "bad"}
     )
@@ -502,6 +674,24 @@ def make_single_condition_plan(condition: ActionCondition, repeats: int) -> Sess
     )
 
 
+def derive_acceptance_blockers(runs: list[dict[str, object]]) -> list[str]:
+    blockers: list[str] = []
+    for run in runs:
+        threshold = run["threshold_evaluation"]
+        pass_fail = threshold["pass_fail"]
+        if pass_fail == "missing" and "missing_manual_observation" not in blockers:
+            blockers.append("missing_manual_observation")
+        elif pass_fail == "fail" and "external_threshold_failure" not in blockers:
+            blockers.append("external_threshold_failure")
+        if run["remote_returncode"] != 0 and "remote_run_failure" not in blockers:
+            blockers.append("remote_run_failure")
+    return blockers
+
+
+def compact_mapping(values: dict[str, object]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in values.items())
+
+
 def make_summary(artifact: dict[str, object], raw_log_path: Path, json_path: Path) -> str:
     session = artifact["session"]
     conditions = artifact["conditions"]
@@ -556,6 +746,69 @@ def make_summary(artifact: dict[str, object], raw_log_path: Path, json_path: Pat
                     str(observation.get("quality", "")),
                     observation_text,
                     str(observation.get("notes", "")),
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Threshold Evaluation",
+            "",
+            "| Run | Pass/fail | Acceptance eligible | Failed metrics | Metrics |",
+            "| --- | --------- | ------------------- | -------------- | ------- |",
+        ]
+    )
+    for run in runs:
+        threshold = run["threshold_evaluation"]
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(run["run_index"]),
+                    str(threshold["pass_fail"]),
+                    str(threshold["acceptance_eligible"]).lower(),
+                    ", ".join(str(item) for item in threshold["failed_metrics"]),
+                    compact_mapping(threshold.get("metrics", {})),
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Action Status Timeline",
+            "",
+            "| Run | Samples | Timeline |",
+            "| --- | ------- | -------- |",
+        ]
+    )
+    for run in runs:
+        samples = run["status_timeline"]
+        timeline = "; ".join(compact_mapping(sample.get("action", {})) for sample in samples)
+        lines.append(f"| {run['run_index']} | {len(samples)} | {timeline} |")
+
+    lines.extend(
+        [
+            "",
+            "## Final Board Snapshot",
+            "",
+            "| Run | Vision | Status | Action |",
+            "| --- | ------ | ------ | ------ |",
+        ]
+    )
+    for run in runs:
+        snapshot = run["final_board_snapshot"]
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(run["run_index"]),
+                    compact_mapping(snapshot.get("vision", {})),
+                    compact_mapping(snapshot.get("status", {})),
+                    compact_mapping(snapshot.get("action", {})),
                 ]
             )
             + " |"
@@ -704,7 +957,10 @@ def main(
         raw_chunks.append(raw_text)
 
         final_vision_state = parse_vision_status(raw_text)
+        run_evidence = extract_run_evidence(raw_text)
         observation = prompt_observation(condition)
+        threshold_evaluation = evaluate_observation_thresholds(condition, observation)
+        observation["pass_fail"] = threshold_evaluation["pass_fail"]
         runs.append(
             {
                 "run_index": planned_run.run_index,
@@ -713,7 +969,10 @@ def main(
                 "command": condition.command,
                 "remote_returncode": result.returncode,
                 "final_vision_state": final_vision_state,
+                "status_timeline": run_evidence["status_timeline"],
+                "final_board_snapshot": run_evidence["final_board_snapshot"],
                 "observation": observation,
+                "threshold_evaluation": threshold_evaluation,
             }
         )
         if result.returncode != 0:
@@ -721,6 +980,7 @@ def main(
             break
 
     raw_log_path.write_text("\n".join(raw_chunks), encoding="utf-8")
+    acceptance_blockers = derive_acceptance_blockers(runs)
 
     artifact: dict[str, object] = {
         "session": {
@@ -740,6 +1000,8 @@ def main(
             "host": args.host,
             "port": args.port,
             "baud": args.baud,
+            "acceptance_eligible": not acceptance_blockers,
+            "acceptance_blockers": acceptance_blockers,
         },
         "conditions": [make_condition_artifact(condition, plan.repeats) for condition in plan.conditions],
         "runs": runs,
