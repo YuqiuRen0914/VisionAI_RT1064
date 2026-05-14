@@ -1,6 +1,6 @@
 # Add matrix and subset session planning
 
-Status: ready-for-agent
+Status: done
 Type: enhancement
 
 ## Parent
@@ -24,14 +24,13 @@ This slice should make the session planner produce stable, repeatable run plans 
 
 ## Acceptance criteria
 
-- [ ] The bench supports the full agreed 12-condition canonical matrix with canonical order
-- [ ] The bench supports subset sessions by bucket and by individual concrete condition while preserving canonical order
-- [ ] Standard sessions run three repeats in round-robin order across selected conditions
-- [ ] Reduced-repeat exploratory sessions are supported and marked as nonstandard evidence
-- [ ] Session IDs are auto-assigned in the `AE01`/`AE02`/... namespace, with optional override
-- [ ] Candidate labels are auto-generated from normalized move/rotate/heading tuning values with explicit `m`/`r`/`h` group prefixes
+- [x] The bench supports the full agreed 12-condition canonical matrix with canonical order
+- [x] The bench supports subset sessions by bucket and by individual concrete condition while preserving canonical order
+- [x] Standard sessions run three repeats in round-robin order across selected conditions
+- [x] Reduced-repeat exploratory sessions are supported and marked as nonstandard evidence
+- [x] Session IDs are auto-assigned in the `AE01`/`AE02`/... namespace, with optional override
+- [x] Candidate labels are auto-generated from normalized move/rotate/heading tuning values with explicit `m`/`r`/`h` group prefixes
 
 ## Blocked by
 
 - [02-ship-one-condition-action-bench-session-runner.md](/Volumes/[C] Windows 11/Users/jjp/Documents/Keil-work/AI_Vision_RT1064/.scratch/action-effect-bench/issues/02-ship-one-condition-action-bench-session-runner.md)
-
