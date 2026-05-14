@@ -195,6 +195,32 @@ static ai_status_t motion_action_runtime_validate_adapter(const motion_action_ru
     return AI_OK;
 }
 
+static uint8_t motion_action_runtime_tuning_is_positive(float value)
+{
+    return (value > 0.0f) ? 1U : 0U;
+}
+
+static ai_status_t motion_action_runtime_reinit_idle_controller(void)
+{
+    motion_action_runtime_zero_debug(&motion_action_runtime_latest_debug);
+    return motion_action_init(&motion_action_runtime_controller, &motion_action_runtime_config);
+}
+
+static void motion_action_runtime_config_to_tuning(const motion_action_config_t *config,
+                                                   motion_action_tuning_t *tuning)
+{
+    tuning->move.max_speed_mm_s = config->move_max_speed_mm_s;
+    tuning->move.accel_mm_s2 = config->move_accel_mm_s2;
+    tuning->move.kp_mm_s_per_mm = config->move_kp_mm_s_per_mm;
+    tuning->move.approach_speed_mm_s = config->move_approach_speed_mm_s;
+    tuning->rotate.max_speed_mm_s = config->rotate_max_speed_mm_s;
+    tuning->rotate.accel_mm_s2 = config->rotate_accel_mm_s2;
+    tuning->rotate.kp_mm_s_per_deg = config->rotate_kp_mm_s_per_deg;
+    tuning->rotate.approach_speed_mm_s = config->rotate_approach_speed_mm_s;
+    tuning->heading.kp_mm_s_per_deg = config->heading_hold_kp_mm_s_per_deg;
+    tuning->heading.max_rot_mm_s = config->heading_hold_max_rot_mm_s;
+}
+
 ai_status_t motion_action_runtime_init(const motion_action_runtime_adapter_t *adapter)
 {
     if(motion_action_runtime_validate_adapter(adapter) != AI_OK)
@@ -385,4 +411,122 @@ void motion_action_runtime_get_speed_sample(motion_speed_sample_t *sample)
     }
 
     *sample = motion_action_runtime_speed_sample;
+}
+
+void motion_action_runtime_get_tuning(motion_action_tuning_t *tuning)
+{
+    uint32_t primask;
+
+    if(tuning == 0)
+    {
+        return;
+    }
+
+    primask = interrupt_global_disable();
+    motion_action_runtime_config_to_tuning(&motion_action_runtime_config, tuning);
+    interrupt_global_enable(primask);
+}
+
+ai_status_t motion_action_runtime_set_move_tuning(const motion_action_move_tuning_t *tuning)
+{
+    if(tuning == 0)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(motion_action_runtime_is_active() != 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    if((motion_action_runtime_tuning_is_positive(tuning->max_speed_mm_s) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->accel_mm_s2) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->kp_mm_s_per_mm) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->approach_speed_mm_s) == 0U))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_action_runtime_config.move_max_speed_mm_s = tuning->max_speed_mm_s;
+    motion_action_runtime_config.move_accel_mm_s2 = tuning->accel_mm_s2;
+    motion_action_runtime_config.move_kp_mm_s_per_mm = tuning->kp_mm_s_per_mm;
+    motion_action_runtime_config.move_approach_speed_mm_s = tuning->approach_speed_mm_s;
+
+    return motion_action_runtime_reinit_idle_controller();
+}
+
+ai_status_t motion_action_runtime_set_rotate_tuning(const motion_action_rotate_tuning_t *tuning)
+{
+    if(tuning == 0)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(motion_action_runtime_is_active() != 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    if((motion_action_runtime_tuning_is_positive(tuning->max_speed_mm_s) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->accel_mm_s2) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->kp_mm_s_per_deg) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->approach_speed_mm_s) == 0U))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_action_runtime_config.rotate_max_speed_mm_s = tuning->max_speed_mm_s;
+    motion_action_runtime_config.rotate_accel_mm_s2 = tuning->accel_mm_s2;
+    motion_action_runtime_config.rotate_kp_mm_s_per_deg = tuning->kp_mm_s_per_deg;
+    motion_action_runtime_config.rotate_approach_speed_mm_s = tuning->approach_speed_mm_s;
+
+    return motion_action_runtime_reinit_idle_controller();
+}
+
+ai_status_t motion_action_runtime_set_heading_tuning(const motion_action_heading_tuning_t *tuning)
+{
+    if(tuning == 0)
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    if(motion_action_runtime_is_active() != 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    if((motion_action_runtime_tuning_is_positive(tuning->kp_mm_s_per_deg) == 0U) ||
+       (motion_action_runtime_tuning_is_positive(tuning->max_rot_mm_s) == 0U))
+    {
+        return AI_ERR_INVALID_ARG;
+    }
+
+    motion_action_runtime_config.heading_hold_kp_mm_s_per_deg = tuning->kp_mm_s_per_deg;
+    motion_action_runtime_config.heading_hold_max_rot_mm_s = tuning->max_rot_mm_s;
+
+    return motion_action_runtime_reinit_idle_controller();
+}
+
+ai_status_t motion_action_runtime_restore_default_tuning(void)
+{
+    motion_action_config_t defaults;
+
+    if(motion_action_runtime_is_active() != 0U)
+    {
+        return AI_ERR_BUSY;
+    }
+
+    motion_defaults_load_action_config(&defaults);
+    motion_action_runtime_config.move_max_speed_mm_s = defaults.move_max_speed_mm_s;
+    motion_action_runtime_config.move_accel_mm_s2 = defaults.move_accel_mm_s2;
+    motion_action_runtime_config.move_kp_mm_s_per_mm = defaults.move_kp_mm_s_per_mm;
+    motion_action_runtime_config.move_approach_speed_mm_s = defaults.move_approach_speed_mm_s;
+    motion_action_runtime_config.rotate_max_speed_mm_s = defaults.rotate_max_speed_mm_s;
+    motion_action_runtime_config.rotate_accel_mm_s2 = defaults.rotate_accel_mm_s2;
+    motion_action_runtime_config.rotate_kp_mm_s_per_deg = defaults.rotate_kp_mm_s_per_deg;
+    motion_action_runtime_config.rotate_approach_speed_mm_s = defaults.rotate_approach_speed_mm_s;
+    motion_action_runtime_config.heading_hold_kp_mm_s_per_deg = defaults.heading_hold_kp_mm_s_per_deg;
+    motion_action_runtime_config.heading_hold_max_rot_mm_s = defaults.heading_hold_max_rot_mm_s;
+
+    return motion_action_runtime_reinit_idle_controller();
 }

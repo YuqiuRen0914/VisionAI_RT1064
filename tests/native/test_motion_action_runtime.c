@@ -59,6 +59,22 @@ static void expect_positive(const char *name, float actual)
     }
 }
 
+static void expect_near_f32(const char *name, float actual, float expected, float tolerance)
+{
+    float diff = actual - expected;
+
+    if(diff < 0.0f)
+    {
+        diff = -diff;
+    }
+
+    if(diff > tolerance)
+    {
+        printf("FAIL %s: expected %.3f got %.3f\n", name, (double)expected, (double)actual);
+        exit(1);
+    }
+}
+
 static void expect_zero_duty(const char *name, const motion_speed_wheel_float_t *duty)
 {
     if((duty->wheel1 != 0.0f) ||
@@ -217,12 +233,79 @@ static void runtime_uses_adapter_time_observation_and_duty_output(void)
     expect_u8("debug elapsed", (uint8_t)debug.elapsed_ms, 40U);
 }
 
+static void tuning_updates_are_read_back_when_idle(void)
+{
+    motion_action_tuning_t tuning;
+    motion_action_move_tuning_t move = {210.0f, 700.0f, 2.5f, 55.0f};
+    motion_action_rotate_tuning_t rotate = {160.0f, 500.0f, 3.25f, 35.0f};
+    motion_action_heading_tuning_t heading = {2.75f, 65.0f};
+
+    reset_stub();
+    init_runtime();
+
+    expect_status("set move tuning", motion_action_runtime_set_move_tuning(&move), AI_OK);
+    expect_status("set rotate tuning", motion_action_runtime_set_rotate_tuning(&rotate), AI_OK);
+    expect_status("set heading tuning", motion_action_runtime_set_heading_tuning(&heading), AI_OK);
+
+    motion_action_runtime_get_tuning(&tuning);
+    expect_near_f32("move max", tuning.move.max_speed_mm_s, 210.0f, 0.001f);
+    expect_near_f32("move accel", tuning.move.accel_mm_s2, 700.0f, 0.001f);
+    expect_near_f32("move kp", tuning.move.kp_mm_s_per_mm, 2.5f, 0.001f);
+    expect_near_f32("move approach", tuning.move.approach_speed_mm_s, 55.0f, 0.001f);
+    expect_near_f32("rotate max", tuning.rotate.max_speed_mm_s, 160.0f, 0.001f);
+    expect_near_f32("rotate accel", tuning.rotate.accel_mm_s2, 500.0f, 0.001f);
+    expect_near_f32("rotate kp", tuning.rotate.kp_mm_s_per_deg, 3.25f, 0.001f);
+    expect_near_f32("rotate approach", tuning.rotate.approach_speed_mm_s, 35.0f, 0.001f);
+    expect_near_f32("heading kp", tuning.heading.kp_mm_s_per_deg, 2.75f, 0.001f);
+    expect_near_f32("heading max rot", tuning.heading.max_rot_mm_s, 65.0f, 0.001f);
+}
+
+static void tuning_updates_are_rejected_while_action_is_active(void)
+{
+    motion_action_tuning_t tuning;
+    motion_action_move_tuning_t move = {210.0f, 700.0f, 2.5f, 55.0f};
+
+    reset_stub();
+    init_runtime();
+
+    expect_status("begin active move",
+                  motion_action_runtime_begin(VISION_PROTOCOL_CMD_MOVE, VISION_PROTOCOL_MOVE_UP, 10U),
+                  AI_OK);
+
+    expect_status("reject active tuning", motion_action_runtime_set_move_tuning(&move), AI_ERR_BUSY);
+    expect_status("reject active defaults", motion_action_runtime_restore_default_tuning(), AI_ERR_BUSY);
+
+    motion_action_runtime_get_tuning(&tuning);
+    expect_near_f32("move max unchanged", tuning.move.max_speed_mm_s, 180.0f, 0.001f);
+}
+
+static void defaults_restore_compiled_action_tuning(void)
+{
+    motion_action_tuning_t tuning;
+    motion_action_move_tuning_t move = {210.0f, 700.0f, 2.5f, 55.0f};
+
+    reset_stub();
+    init_runtime();
+
+    expect_status("set move tuning", motion_action_runtime_set_move_tuning(&move), AI_OK);
+    expect_status("restore defaults", motion_action_runtime_restore_default_tuning(), AI_OK);
+
+    motion_action_runtime_get_tuning(&tuning);
+    expect_near_f32("default move max", tuning.move.max_speed_mm_s, 180.0f, 0.001f);
+    expect_near_f32("default move accel", tuning.move.accel_mm_s2, 600.0f, 0.001f);
+    expect_near_f32("default move kp", tuning.move.kp_mm_s_per_mm, 3.0f, 0.001f);
+    expect_near_f32("default move approach", tuning.move.approach_speed_mm_s, 40.0f, 0.001f);
+}
+
 int main(void)
 {
     invalid_adapter_is_rejected();
     begin_reports_sensor_invalid_when_heading_adapter_fails();
     observation_failure_reports_sensor_invalid_result();
     runtime_uses_adapter_time_observation_and_duty_output();
+    tuning_updates_are_read_back_when_idle();
+    tuning_updates_are_rejected_while_action_is_active();
+    defaults_restore_compiled_action_tuning();
 
     printf("PASS motion_action_runtime\n");
     return 0;

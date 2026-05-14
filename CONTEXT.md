@@ -180,6 +180,186 @@ _Avoid_: tuning by feel only, summary without raw trace, raw trace without decis
 The repeatable AI-assisted debug workflow that runs speed-loop bench commands, captures raw serial output, computes coarse response statistics, enforces stop behavior, and emits summarized tuning evidence.
 _Avoid_: one-off manual serial sessions, unparsed tuning traces, tests that leave motors armed
 
+**Automated action-effect bench script**:
+The repeatable AI-assisted debug workflow that injects simulated `MOVE` and `ROTATE` vision decisions, captures action and wheel-speed telemetry, records observed physical action effect, and emits summarized tuning evidence for action-layer parameters.
+_Avoid_: wheel-speed-only bench script, visual servoing, tuning by final feel only
+
+**First-pass action bench strata**:
+The first-version evidence buckets for the **Automated action-effect bench script**: `MOVE short`, `MOVE long`, `ROTATE 90`, and `ROTATE 180`, with direction-specific `MOVE` splits treated as a follow-up hypothesis only after repeatable asymmetry is observed.
+_Avoid_: one undifferentiated action benchmark, assuming per-direction action tuning before evidence
+
+**First-pass move representative distances**:
+The first-version `MOVE` evidence points are `20 cm` for `MOVE short` and `100 cm` for `MOVE long`, while `150 cm` remains a later field-coverage target rather than a first-pass benchmark.
+_Avoid_: treating every field-length run as a first-pass tuning point, assuming `150 cm` is already inside the default action envelope
+
+**First-pass move direction samples**:
+The first-version `MOVE` benchmark runs `up`, `down`, `left`, and `right` as repeated samples inside the same distance bucket so directional asymmetry can be observed without turning direction into a separate parameter class too early.
+_Avoid_: benchmarking only one direction, declaring per-direction action tuning before repeatable evidence
+
+**First-pass rotate direction samples**:
+The first-version `ROTATE` benchmark runs `cw` and `ccw` as repeated samples inside the same angle bucket so rotation-direction asymmetry can be observed without turning direction into a separate parameter class too early.
+_Avoid_: benchmarking only one rotation direction, declaring per-direction action tuning before repeatable evidence
+
+**First-pass action repetition count**:
+The first-version benchmark records three runs for every first-pass action condition so tuning decisions rest on repeated evidence rather than a single pass.
+_Avoid_: accepting one-off results as representative, treating every condition as a single trial
+
+**First-pass action canonical order**:
+The first-version canonical condition order is `MOVE short` `up/down/left/right`, then `MOVE long` `up/down/left/right`, then `ROTATE 90` `cw/ccw`, then `ROTATE 180` `cw/ccw`; full-matrix, subset, and round-robin execution all preserve this order for the conditions they include.
+_Avoid_: ad-hoc condition ordering, input-order-dependent subsets, or multiple incompatible "standard" condition sequences
+
+**First-pass action round-robin order**:
+The first-version benchmark executes run 1 across all first-pass conditions before run 2, then run 3, so drift from battery, temperature, and floor state is spread across the full evidence set instead of concentrated inside one condition.
+_Avoid_: three back-to-back runs of one condition, assuming session drift is negligible
+
+**Structured action-effect observation**:
+The per-run manual record of real-world action effect entered immediately after each run in fixed fields: `MOVE` records actual travel, lateral drift, end-heading error, pass/fail from explicit external thresholds, a `good`/`acceptable`/`bad` quality grade, and notes; `ROTATE` records actual angle, translation crosstalk, end-heading error, pass/fail from explicit external thresholds, a `good`/`acceptable`/`bad` quality grade, and notes.
+_Avoid_: telemetry-only truth, free-text-only bench notes
+
+**Manual observation sign convention**:
+The first-version **Structured action-effect observation** uses command-frame signs and final action-end displacement: `MOVE actual_travel_mm` is the final signed displacement along the commanded axis, `lateral_drift_mm` is the final signed lateral displacement relative to that axis with commanded right positive and left negative, `ROTATE actual_angle_deg` is the final signed net rotation at action end in the commanded protocol sign convention, `end_heading_error_deg` is a signed final-heading error relative to commanded expectation, and `translation_crosstalk_mm` is recorded as unsigned final translation magnitude at action end.
+_Avoid_: mixing field coordinates with command coordinates, signed and unsigned drift values without an explicit convention, collapsing heading error sign into magnitude only, mixing final displacement with peak in-run excursion, mixing final axis displacement with total traveled path length, mixing final lateral displacement with peak sideways excursion, mixing final net angle with total accumulated turned angle
+
+**First-pass external action thresholds**:
+The first-version `pass/fail` limits for **Structured action-effect observation**: `MOVE short` uses `actual_travel <= +/-10 mm`, `lateral_drift <= 10 mm`, `end_heading_error <= 3 deg`; `MOVE long` uses `actual_travel <= +/-30 mm`, `lateral_drift <= 20 mm`, `end_heading_error <= 5 deg`; `ROTATE 90` uses `actual_angle <= +/-3 deg`, `translation_crosstalk <= 20 mm`, `end_heading_error <= 3 deg`; `ROTATE 180` uses `actual_angle <= +/-5 deg`, `translation_crosstalk <= 30 mm`, `end_heading_error <= 5 deg`.
+_Avoid_: pass/fail by impression only, mixing benchmark thresholds with later field-coverage targets
+
+**First-pass hardcoded action bench matrix**:
+The first-version action bench script hardcodes its 12 conditions, 3-pass round-robin repetition plan, and first-pass external thresholds instead of introducing a separate configuration file before the workflow is proven.
+_Avoid_: premature bench configuration format, rebuilding the same first-pass matrix through external files before the script is stable
+
+**Temporary action tuning override**:
+The debug text command workflow that changes action-layer tuning and limits at runtime for bench comparison, then resets to compiled defaults after reboot instead of persisting to flash.
+_Avoid_: source edit plus reflash for every bench trial, hidden persistent action tuning
+
+**First-pass action tuning surface**:
+The first-version **Temporary action tuning override** exposes only three runtime groups: `move` shape (`max_speed`, `accel`, `kp`, `approach_speed`), `rotate` shape (`max_speed`, `accel`, `kp`, `approach_speed`), and `heading` correction (`kp`, `max_rot`), while completion and fault thresholds stay fixed at first.
+_Avoid_: exposing every action threshold on day one, masking control-shape problems by loosening `DONE`, timeout, or obstruction criteria too early
+
+**Idle-only action tuning update**:
+The first-version **Temporary action tuning override**, including `action defaults`, may change parameters only while no action is active, and each accepted change applies only to later runs instead of modifying an in-flight evidence sample.
+_Avoid_: mid-run action retuning, mixing one evidence run across multiple parameter sets
+
+**Action tuning readback and defaults restore**:
+The first-version **Temporary action tuning override** includes explicit `show` readback of the current action-layer runtime tuning using fixed parseable `DATA` lines for move, rotate, and heading groups, and every successful setter or `action defaults` reply also echoes the full current tuning snapshot after one `OK action ...` line.
+_Avoid_: hidden active tuning state, reboot-only return to defaults, setter-only debug commands, naming collisions with **Protocol reset**
+
+**Bench-session action tuning state**:
+The active action-layer runtime tuning established by **Temporary action tuning override** that persists across single-action completion, `QUERY`, **Emergency stop state**, and **Protocol reset**, and is cleared only by `action defaults` or reboot.
+_Avoid_: treating protocol-state reset as tuning reset, one-shot per-action tuning state
+
+**Action debug command module**:
+The debug text command Module that owns `action move ...`, `action rotate ...`, `action heading ...`, `action show`, and `action defaults` for **Temporary action tuning override**, without taking over discrete action execution itself.
+_Avoid_: mixing action tuning parsing into the top-level command router, treating `action ...` debug commands as the OPENART binary protocol, or coupling the interface layer directly to runtime internals
+
+**Action tuning wrapper APIs**:
+The motion-layer wrapper functions exposed through `motion.h` for **Temporary action tuning override**: explicit set-move, set-rotate, set-heading, get-current-tuning, and restore-defaults operations instead of a generic full-config mutator.
+_Avoid_: exporting a wide open action-config write surface to the interface layer, bypassing first-pass tuning boundaries
+
+**Mode-tolerant action tuning access**:
+The first-version `action show` is available in any motion mode, while `action move`, `action rotate`, `action heading`, and `action defaults` are allowed in any motion mode only when no action is active, because action tuning is a bench-session state rather than an `action_closed_loop`-only transient.
+_Avoid_: unnecessarily tying action tuning to one motion mode, allowing mid-action updates under a different name
+
+**Bench-session action initialization**:
+The first-version action bench script begins each bench session by sending `action defaults`, then `action show`, and only then applying the trial `action move`/`action rotate`/`action heading` overrides, so every session starts from a provable known tuning state.
+_Avoid_: inheriting stale tuning from a prior bench session, assuming reboot or prior script exit already restored defaults
+
+**Per-run protocol reset**:
+The first-version action bench script sends `vision sim reset` before each run so the UART action state machine starts from `IDLE` with cleared error and replay state, while **Bench-session action tuning state** stays intact.
+_Avoid_: reusing protocol error state across runs, assuming **Protocol reset** should also clear action tuning
+
+**Run completion polling**:
+The first-version action bench script treats a run as finished when polled `vision` state leaves `BUSY` for `IDLE` or `ERROR`, then immediately captures final `vision` and `status` snapshots for board-side evidence.
+_Avoid_: waiting for a non-existent human-readable `DONE` text line, ending a run without final protocol and action snapshots
+
+**Per-run speed stream window**:
+The first-version action bench script enables `stream speed` immediately before each run and turns it off immediately after run completion so wheel-speed telemetry is bounded to that run's evidence window.
+_Avoid_: one session-long speed stream that buries prompts and mixes idle text with run telemetry
+
+**Session-level action bench artifacts**:
+The first-version action bench stores one raw serial log file and one structured summary file per bench session, with each run identified inside the summary by its own condition, repetition index, tuning snapshot, board-side evidence, and manual observation fields.
+_Avoid_: exploding one session into dozens of tiny files, losing per-run identity inside one undifferentiated session note
+
+**Action bench artifact root**:
+The first-version action bench stores its session artifacts under a dedicated `.scratch/action-effect-bench/` tree instead of reusing the speed-loop artifact directory.
+_Avoid_: mixing action-effect evidence into speed-loop artifact folders, hiding different bench purposes under one log root
+
+**Dual-format action bench summary**:
+The first-version action bench writes both a machine-readable session JSON file and a human-readable session Markdown summary for the same bench session, with the Markdown summary containing both per-condition aggregate sections and per-run detail rows.
+_Avoid_: machine-only evidence that is hard to review, markdown-only evidence that is hard to compare programmatically, or a flat session summary that is either too high-level or too noisy
+
+**Structured action bench JSON layout**:
+The first-version machine-readable session JSON is organized into top-level `session`, `conditions`, and `runs` sections so session metadata, per-condition aggregates, and per-run evidence can be consumed without reconstructing one layer from another.
+_Avoid_: a flat JSON dump that forces later tools to reverse-engineer condition summaries from raw runs every time
+
+**Per-condition aggregate summary**:
+The first-version condition-level summary is optimized for AI-assisted parameter comparison: it reports `pass_count/total_runs`, quality-grade counts, and manual observation value aggregates using `median`, `min`, and `max`, while board-side final snapshot fields stay lightweight and dense speed-stream evidence remains primarily at run level instead of being aggressively re-aggregated across runs.
+_Avoid_: over-interpreting means from three-sample runs, hiding spread when one repeat behaves very differently from the others, or burying AI-useful run evidence inside premature cross-run telemetry statistics
+
+**Low-rate action status timeline**:
+The first-version run-level evidence includes a low-rate `status` polling timeline during each action so `DATA action` and `DATA action_feedback` can be observed over time without attempting full control-rate capture.
+_Avoid_: relying on final snapshots alone for action-shape diagnosis, or flooding the log with near-control-rate status polling
+
+**Action bench long-term results table**:
+The first-version action bench script also appends one session-level summary row to `.scratch/action-effect-bench/hardware-test-results.md`, including `partial` or `aborted` sessions, while detailed evidence stays in the session raw log, JSON, and Markdown files; the table is append-only and later sessions do not rewrite earlier rows.
+_Avoid_: manually forgetting to register a completed session, dropping failed sessions from the long-term record, duplicating full per-run detail into the long-term table, or rewriting past evidence to match later interpretations
+
+**Action bench coverage summary**:
+The first-version long-term results table records an explicit session coverage summary such as `full-matrix` or a concrete subset description, so session scope is visible without inferring it from status alone.
+_Avoid_: guessing tested scope from `primary_status`, hiding subset boundaries inside only the detailed session artifacts
+
+**Action bench quality flag**:
+The first-version long-term results table records a lightweight quality flag such as `none` or `concern` alongside the session `primary_status`, so quality concerns remain visible without creating extra primary-status variants; `concern` is triggered by any run graded `bad`, clearly unstable repeat-to-repeat spread inside one condition, or explicitly noted abnormal behavior such as slip, severe oscillation, collision stop, or similar bench-visible anomalies.
+_Avoid_: hiding quality concerns inside prose only, overloading the primary status with secondary quality judgment, or inventing an unbounded second scoring system
+
+**Derived action session conclusion**:
+The first-version action bench script derives the canonical session-level `primary_status` such as `accepted`, `scoped-pass`, `rejected`, `exploratory`, `partial`, or `aborted` from the recorded evidence and rules, where `accepted` is reserved for standard full-matrix acceptance, `scoped-pass` is reserved for standard subset-only full pass, `rejected` may already follow from any standard-scope failure, reduced-repeat sessions remain `exploratory` without extra pass/fail-flavored substatuses, `partial` means the selected scope was intentionally or manually left incomplete while the evidence chain stayed intact, and `aborted` means the evidence chain broke.
+_Avoid_: ad-hoc hand-written primary outcomes for the same evidence, splitting one session conclusion across multiple competing status fields, using full-matrix acceptance language for subset-only evidence, proliferating near-duplicate exploratory status words, or blurring incomplete sessions with broken sessions
+
+**Action bench session ID**:
+The first-version action bench uses an `AE01`/`AE02`/... session ID sequence so action-effect evidence never collides with the speed-loop `T01`/`T02`/... records, with automatic next-ID allocation by default and optional manual override for reruns or backfill.
+_Avoid_: reusing the speed-loop `Txx` namespace, ambiguous cross-references between different bench families, hard-requiring manual ID bookkeeping
+
+**Action bench session scope**:
+The first-version action bench supports both a full-matrix session and a subset session that runs only selected first-pass conditions, while preserving the same per-run evidence shape and session artifacts; subset selection may target either whole first-pass buckets or individual concrete conditions, and selected subsets still execute in the canonical matrix order.
+_Avoid_: forcing every tuning iteration through the full 36-run matrix, inventing ad-hoc one-off scripts for partial checks, supporting only one subset granularity, or letting ad-hoc input order change the evidence sequence
+
+**Nonstandard action repetition run**:
+An action bench session that intentionally uses fewer than the standard three repeats for selected conditions during exploratory tuning, and is explicitly marked as nonstandard evidence in both session artifacts and the long-term results table.
+_Avoid_: silently comparing one-off exploratory runs against standard three-repeat evidence as if they had equal weight
+
+**Action tuning candidate session**:
+The first-version action bench treats one session as evidence for exactly one candidate action-tuning set, so every `AE` ID maps to one coherent `move`/`rotate`/`heading` trial parameter set.
+_Avoid_: mixing multiple candidate tuning sets inside one session, ambiguous long-term rows that do not correspond to one parameter hypothesis
+
+**Automatic candidate label**:
+The first-version action bench derives a stable candidate label automatically from the current `move`/`rotate`/`heading` tuning values only, using normalized value strings that drop redundant trailing zeros and explicit group prefixes such as `m..._r..._h...`, instead of asking for manual naming at session start.
+_Avoid_: inconsistent human naming for equivalent parameter sets, extra session input burden for non-essential labels, mixing session environment metadata into candidate identity, generating different labels from numerically equivalent float formatting, or emitting unlabeled bare number sequences that are hard to read
+
+**Session-local candidate judgment**:
+The first-version bench treats `primary_status` as a session-local judgment for one candidate under one recorded set of session conditions, and does not auto-merge multiple sessions with the same candidate label into one cross-session verdict.
+_Avoid_: treating repeated sessions for one candidate as if they had already been globally reconciled, hiding condition-dependent outcomes behind one premature aggregate label
+
+**Standard candidate acceptance**:
+The first-version action bench accepts a candidate tuning set only from a standard three-repeat full-matrix session where every selected condition passes all three repeats; a standard three-repeat subset session may reach `scoped-pass` if its chosen scope fully passes, but any standard-scope failure is enough to mark the candidate `rejected`, while reduced-repeat sessions remain exploratory evidence and do not auto-promote a candidate to accepted.
+_Avoid_: accepting a candidate from partial repeat evidence, mixing exploratory quick checks with standard acceptance evidence, turning subjective quality grades into an implicit second pass/fail threshold, treating subset-only coverage as global acceptance, or ignoring a standard-scope failure just because the full matrix was not run
+
+**Action bench failure policy**:
+The first-version action bench treats action-level `ERROR` or threshold failure as valid negative evidence for that run while continuing the session, but aborts the whole session on transport or protocol-chain failure such as lost serial control, failed protocol reset, unreadable vision state, or board restart.
+_Avoid_: throwing away valid failure evidence, continuing a session after the evidence chain is broken
+
+**Standard session completion rule**:
+The first-version standard session continues through all selected conditions even after early run-level failures, unless **Action bench failure policy** triggers a session abort; exploratory subset sessions may still be stopped manually and recorded as `aborted`.
+_Avoid_: silently stopping a standard evidence session after the first failed condition, overloading a valid negative result into a transport-level abort
+
+**Bench-only action script responsibility**:
+The first-version action bench script is responsible for serial-session control, evidence capture, manual observation prompts, and result artifacts only; build and flash remain external preconditions recorded in the session metadata instead of being driven by the bench script.
+_Avoid_: coupling bench evidence generation to build/flash orchestration, hiding flash failures inside action-bench session logic
+
+**Required action session metadata**:
+The first-version action bench requires manual `firmware_label`, `flash_status`, `surface_label`, and `power_label` session metadata before running because current board-side debug text does not expose a unique flashed build identity and action-effect evidence depends on floor and power conditions; it does not add automatic git snapshot metadata in the first pass.
+_Avoid_: bench evidence that cannot be traced back to a flashed firmware build, comparing sessions across unknown floor or power conditions, assuming startup text already identifies the binary, adding provenance complexity before the bench workflow is stable
+
 **Mac-to-Windows serial bench workflow**:
 The current hardware-control workflow where a repository script runs from macOS, uses the configured Windows SSH target and key, and controls the Windows VM serial port such as `COM3` while saving logs back into the shared workspace.
 _Avoid_: assuming macOS owns the UART device, ad-hoc VM shell commands without repo scripts
@@ -230,6 +410,34 @@ _Avoid_: assuming CCW-positive math yaw
 - The **Motion debug command module** belongs to the **Debug text command layer** and operates the open-loop side of **Motion debug mode**, not closed-loop action execution.
 - The **Telemetry debug command module** belongs to the **Debug text command layer** and operates **Calibration telemetry mode**, not the OPENART binary action protocol.
 - The **Speed debug command module** belongs to the **Debug text command layer** and operates **Speed-loop bench mode**, not the OPENART binary action protocol.
+- The **Action debug command module** belongs to the **Debug text command layer** and operates **Temporary action tuning override**, not the OPENART binary action protocol.
+- The **Action debug command module** talks to motion-layer wrapper APIs instead of runtime internals directly.
+- The **Action debug command module** uses **Action tuning wrapper APIs** to stay inside the first-pass tuning surface.
+- The **Action debug command module** follows **Mode-tolerant action tuning access** across motion modes.
+- The **Automated action-effect bench script** begins with **Bench-session action initialization** before applying trial action tuning.
+- The **Automated action-effect bench script** performs **Per-run protocol reset** before each action evidence sample.
+- The **Automated action-effect bench script** ends each run through **Run completion polling** and final board-side snapshots.
+- The **Automated action-effect bench script** uses **Per-run speed stream window** so wheel-speed telemetry stays aligned to one evidence sample.
+- The **Automated action-effect bench script** captures **Low-rate action status timeline** during each run for action-shape diagnosis.
+- The **Automated action-effect bench script** emits **Session-level action bench artifacts** for one whole bench pass while preserving per-run identity inside the summary.
+- **Session-level action bench artifacts** live under **Action bench artifact root**.
+- **Session-level action bench artifacts** use **Dual-format action bench summary** for both review and machine comparison.
+- **Dual-format action bench summary** uses **Per-condition aggregate summary** before per-run details.
+- The **Automated action-effect bench script** updates **Action bench long-term results table** with one lightweight row per completed session.
+- **Action bench long-term results table** includes **Action bench coverage summary** for each session row.
+- **Action bench long-term results table** includes **Action bench quality flag** alongside each session row.
+- The **Automated action-effect bench script** assigns a **Derived action session conclusion** to each session artifact and long-term row.
+- The **Automated action-effect bench script** identifies each session with an **Action bench session ID**.
+- The **Automated action-effect bench script** may run either **Action bench session scope** as a full matrix or a selected subset.
+- The **Automated action-effect bench script** marks exploratory reduced-repeat sessions as **Nonstandard action repetition run**.
+- Each **Action bench session ID** corresponds to one **Action tuning candidate session**.
+- Each **Action tuning candidate session** carries an **Automatic candidate label** derived from its tuning values.
+- Each **Action tuning candidate session** uses **Session-local candidate judgment** rather than automatic cross-session aggregation.
+- Candidate acceptance from action bench evidence follows **Standard candidate acceptance**.
+- Session continuation versus abort follows **Action bench failure policy**.
+- Standard session continuation follows **Standard session completion rule**.
+- The **Automated action-effect bench script** follows **Bench-only action script responsibility** and does not own build or flash steps.
+- The **Automated action-effect bench script** begins with **Required action session metadata** so each session can be traced to a flashed firmware state.
 - The **Vision debug command module** belongs to the **Debug text command layer** and may inject simulated vision frames for bench testing without changing the OPENART binary action protocol.
 - **Discrete actions** encode `MOVE` distance in centimeters, but **Local closed loop** converts that value to the **Local motion unit** before planning or control.
 - **Local closed loop** derives **Wheel-speed observation** from accumulated encoder totals and uses **Filtered wheel-speed estimate** as the wheel-speed PI control measurement.
@@ -260,6 +468,20 @@ _Avoid_: assuming CCW-positive math yaw
 - **Temporary tuning override** becomes an **Evidence-backed tuning commit** only after the bench evidence is recorded and the chosen values are intentionally copied into source defaults.
 - **Speed-loop tuning evidence** supports **Evidence-backed tuning commit** decisions.
 - The **Automated speed-loop bench script** produces **Speed-loop tuning evidence** for AI-assisted tuning.
+- The **Automated action-effect bench script** follows speed-loop acceptance and produces action-layer tuning evidence for **Discrete action** execution.
+- The **Automated action-effect bench script** organizes first-pass evidence by **First-pass action bench strata** before any broader action-default commit.
+- **First-pass action bench strata** uses **First-pass move representative distances** for its `MOVE short` and `MOVE long` buckets.
+- **First-pass move representative distances** use **First-pass move direction samples** inside each `MOVE` distance bucket.
+- **First-pass action bench strata** uses **First-pass rotate direction samples** inside its `ROTATE 90` and `ROTATE 180` buckets.
+- Each first-pass action condition uses **First-pass action repetition count**.
+- **First-pass action repetition count** is scheduled with **First-pass action round-robin order**.
+- The **Automated action-effect bench script** records **Structured action-effect observation** for each run in addition to onboard telemetry.
+- **Structured action-effect observation** uses **First-pass external action thresholds** to decide first-version `pass/fail`.
+- The **Automated action-effect bench script** starts with a **First-pass hardcoded action bench matrix**.
+- The **Automated action-effect bench script** uses **Temporary action tuning override** to compare action-layer parameter trials without reflashing each time.
+- **Temporary action tuning override** starts with the **First-pass action tuning surface**.
+- **Temporary action tuning override** includes **Action tuning readback and defaults restore**.
+- **Temporary action tuning override** establishes a **Bench-session action tuning state** across repeated action runs.
 - The first **Automated speed-loop bench script** uses the **Mac-to-Windows serial bench workflow** because the UART is currently attached to Windows `COM3`.
 - **Fixed-point calibration constants** avoid manual conversion when copying calibration output into source configuration.
 - **Integer-turn encoder calibration** is the first-version encoder calibration input method.
@@ -279,6 +501,7 @@ _Avoid_: assuming CCW-positive math yaw
 - Repeated UART frames can mean a retry or a new action. Resolved: the same `SEQ/CMD/DIR/VAL` is **Action response replay**, while the same `SEQ` with different payload is `BAD_CMD`.
 - STOP can mean normal cancellation or emergency stop. Resolved: UART `STOP` enters **Emergency stop state** and requires `RESET` before normal actions resume.
 - RESET can mean protocol recovery or MCU reboot. Resolved: UART `RESET` is **Protocol reset**, not a hardware reset and not a calibration reset.
+- Bench reset can mean clearing protocol state or clearing action tuning state. Resolved: first-pass runs use **Per-run protocol reset** to clear UART action state only; **Bench-session action tuning state** survives until `action defaults` or reboot.
 - `MOVE` distance can mean protocol centimeters or local control distance. Resolved: centimeters exist only at the UART protocol boundary; the **Lower controller** uses the **Local motion unit** for closed-loop planning and feedback.
 - Wheel speed can mean the latest encoder PIT delta, raw motion-tick speed, or the controller's filtered speed estimate. Resolved: **Wheel-speed observation** is raw speed from accumulated encoder total delta over elapsed motion-control time; **Filtered wheel-speed estimate** is the value consumed by PI, start-boost exit, completion, and fault checks.
 - Wheel speed control can mean direct duty mapping, PI, or full PID with feedforward. Resolved: first version is **Wheel-speed PI loop** with D and feedforward fields reserved, static-friction compensation off by default.
@@ -306,7 +529,81 @@ _Avoid_: assuming CCW-positive math yaw
 - Speed-loop tuning can be too timid or too risky. Resolved: use the **Speed-loop bench safety envelope** with staged limits, typical `3-5 s` single-wheel holds, `2-4 s` all-wheel holds, stop intervals, and immediate stop on abnormal telemetry.
 - Speed-loop logs can mean raw serial dumps or decision summaries. Resolved: **Speed-loop tuning evidence** requires both raw logs and summarized hardware-test results.
 - Agent-run speed tests should be repeatable. Resolved: use an **Automated speed-loop bench script** before making repeated tuning comparisons.
+- "running effect" can mean wheel-speed response, visual tracking quality, or whole-chassis action behavior. Resolved: the current optimization target is **Automated action-effect bench script** coverage for `MOVE` and `ROTATE` **Discrete actions**, not another wheel-speed-only pass.
 - Serial bench scripts can run on the Mac or inside Windows. Resolved: use the **Mac-to-Windows serial bench workflow** for the current setup.
+- Action categories can mean runtime parameter classes or just bench evidence buckets. Resolved: first version uses **First-pass action bench strata** as evidence buckets only; runtime gain scheduling is a separate later decision.
+- Long `MOVE` distance can mean a first-pass benchmark or a later field requirement. Resolved: first-pass `MOVE long` uses `100 cm`, while `150 cm` is a later field-coverage target.
+- `MOVE` directions can be separate parameter classes or repeated evidence samples. Resolved: first version uses **First-pass move direction samples** inside each `MOVE` distance bucket and defers per-direction parameter classes until asymmetry is repeatable.
+- `ROTATE` directions can be separate parameter classes or repeated evidence samples. Resolved: first version uses **First-pass rotate direction samples** inside each angle bucket and defers per-direction parameter classes until asymmetry is repeatable.
+- Repeated runs can mean optional confirmation or required first-pass evidence. Resolved: first version requires **First-pass action repetition count** of three runs per condition.
+- Standard condition order can be implicit, input-driven, or fixed. Resolved: first version uses **First-pass action canonical order** for full and subset execution.
+- Repeated runs can be grouped by condition or spread across the whole matrix. Resolved: first version uses **First-pass action round-robin order**.
+- Action-effect judgment can mean hard acceptance or softer quality impression. Resolved: first version uses explicit external thresholds for `pass/fail`, while `good`/`acceptable`/`bad` remains a supplementary quality grade.
+- External action thresholds can be hand-wavy or fixed per benchmark bucket. Resolved: first version uses **First-pass external action thresholds** for `MOVE short`, `MOVE long`, `ROTATE 90`, and `ROTATE 180`.
+- The first bench matrix can be hardcoded or configuration-driven. Resolved: first version uses a **First-pass hardcoded action bench matrix**.
+- Runtime tuning can mean wheel-speed-only or action-layer too. Resolved: first version adds **Temporary action tuning override** for the action layer so bench iteration does not require reflashing on every parameter change.
+- The first action tuning interface can expose only shape parameters or every completion and safety threshold too. Resolved: first version uses **First-pass action tuning surface** and keeps completion/fault thresholds fixed initially.
+- Action tuning support can be setter-only or include inspection and restore commands. Resolved: first version includes **Action tuning readback and defaults restore**.
+- Action tuning readback can be human-only prose or fixed parseable output. Resolved: first version uses fixed `DATA` lines for move, rotate, and heading tuning groups.
+- Action tuning setters can require a second explicit readback or can echo the full snapshot immediately. Resolved: first version echoes the full current tuning snapshot after each successful setter and `action defaults`.
+- Action tuning parsing can stay in `comm.c` or live in its own module. Resolved: first version uses an **Action debug command module** instead of expanding the top-level router inline.
+- Action tuning commands can call runtime internals directly or go through motion-layer wrappers. Resolved: first version uses motion-layer wrapper APIs from the **Action debug command module**.
+- Action tuning motion APIs can be explicit wrappers or a generic full-config setter/getter. Resolved: first version uses **Action tuning wrapper APIs** with explicit operations for move, rotate, heading, show, and defaults.
+- Action tuning access can be locked to `action_closed_loop` mode or follow bench-session semantics across modes. Resolved: first version uses **Mode-tolerant action tuning access**.
+- Bench-session tuning can start from inherited state or an explicit known baseline. Resolved: first version uses **Bench-session action initialization** with `action defaults` then `action show` before applying trial overrides.
+- "action reset" could mean protocol/state reset or restoring runtime tuning defaults. Resolved: the tuning workflow uses `action defaults`, leaving **Protocol reset** as a separate concept.
+- Action tuning restore could be allowed mid-run or only between runs. Resolved: `action defaults` follows **Idle-only action tuning update** and may change only later runs.
+- Action-layer runtime tuning could be per-action or a bench-session state. Resolved: first version uses **Bench-session action tuning state** that survives `QUERY`, **Emergency stop state**, **Protocol reset**, and single-action completion until `action defaults` or reboot.
+- Run completion can mean waiting for a text `DONE` line or observing protocol state transition. Resolved: first version uses **Run completion polling** on `vision` state and then captures final `vision` plus `status` snapshots.
+- Speed telemetry scope can span a whole bench session or one action sample. Resolved: first version uses **Per-run speed stream window** around each run.
+- Action-state evidence can be final-snapshot-only or include a low-rate timeline. Resolved: first version captures **Low-rate action status timeline** during each run in addition to final snapshots.
+- Bench evidence files can be run-level or session-level. Resolved: first version uses **Session-level action bench artifacts** with per-run structure inside the summary.
+- Action bench artifacts can share the speed-loop log root or live in a separate tree. Resolved: first version uses **Action bench artifact root** under `.scratch/action-effect-bench/`.
+- Action bench summary can be markdown-only or dual-format. Resolved: first version uses **Dual-format action bench summary** with both JSON and Markdown for the same session.
+- Markdown session summary can be flat per-run detail only or layered with aggregate sections. Resolved: first version uses **Dual-format action bench summary** with per-condition aggregates plus per-run details.
+- Machine-readable session JSON can be flat or layered by session, condition, and run. Resolved: first version uses **Structured action bench JSON layout** with `session`, `conditions`, and `runs`.
+- Condition aggregates can be mean-first or median/spread-first for tiny repeat counts. Resolved: first version uses **Per-condition aggregate summary** with `pass_count`, quality counts, and `median/min/max`.
+- Board-side telemetry can be heavily collapsed at condition level or kept rich at run level for later AI tuning. Resolved: first version keeps condition-level telemetry aggregation lightweight and preserves richer speed-stream evidence at run level.
+- Long-term action bench evidence can be fully manual or session-auto-registered. Resolved: first version auto-appends one lightweight entry to **Action bench long-term results table** for every completed, partial, or aborted session.
+- Long-term evidence tables can rewrite past rows or remain append-only. Resolved: first version keeps **Action bench long-term results table** append-only.
+- Long-term rows can omit tested scope or carry an explicit scope summary. Resolved: first version includes **Action bench coverage summary** in each long-term row.
+- Quality concern can become a new primary status or remain a secondary flag. Resolved: first version uses **Action bench quality flag** as a separate field instead of expanding `primary_status`.
+- Quality concern can be left as vague prose or triggered by explicit evidence patterns. Resolved: first version raises **Action bench quality flag** from `bad` run grades, unstable repeat spread, or explicitly noted abnormal bench behavior.
+- Bench session IDs can share the speed-loop `Txx` sequence or use a dedicated namespace. Resolved: first version uses **Action bench session ID** with an `AExx` prefix.
+- Session conclusions can be hand-authored or derived from the evidence rules. Resolved: first version uses **Derived action session conclusion** as the canonical `primary_status`, with any explanation kept inline in the session summary or long-term note.
+- Incomplete sessions can reflect an intact but intentionally stopped run set or a broken evidence chain. Resolved: first version uses `partial` for the former and `aborted` for the latter under **Derived action session conclusion**.
+- Session IDs can be always manual or auto-assigned with override. Resolved: first version auto-assigns the next **Action bench session ID** by default and allows manual override when needed.
+- Action bench sessions can be full-matrix-only or allow targeted subsets. Resolved: first version supports **Action bench session scope** for both full-matrix and subset sessions.
+- Subset selection can be bucket-only or condition-level too. Resolved: first version lets **Action bench session scope** target whole buckets or individual concrete conditions.
+- Subset all-pass evidence can reuse `accepted` or carry a scope-limited status. Resolved: first version uses `scoped-pass` for standard subset sessions that fully pass within their chosen scope.
+- Subset standard failures can stay scope-limited or globally reject the candidate. Resolved: first version treats any standard-scope failure as `rejected`, even when the tested scope is a subset.
+- Subset execution can follow ad-hoc input order or canonical matrix order. Resolved: first version executes subset selections in canonical matrix order.
+- Repetition count can stay standard or be reduced for exploratory sessions. Resolved: first version allows **Nonstandard action repetition run** with explicit marking whenever repeats are fewer than three.
+- Reduced-repeat sessions can invent extra success/failure-flavored substatuses or remain under one exploratory state. Resolved: first version keeps all reduced-repeat sessions under `exploratory`.
+- One session can represent one candidate tuning set or mix several. Resolved: first version uses **Action tuning candidate session** so one `AE` session maps to exactly one candidate action parameter set.
+- Candidate labels can be manual or automatically derived from tuning values. Resolved: first version uses **Automatic candidate label** and does not ask for manual candidate naming.
+- Candidate labels can reflect only tuning values or also session environment metadata. Resolved: first version binds **Automatic candidate label** to action tuning values only.
+- Candidate labels can preserve raw float formatting or normalize equivalent numeric strings. Resolved: first version normalizes numeric formatting inside **Automatic candidate label** by dropping redundant trailing zeros.
+- Candidate labels can be bare numeric tuples or prefixed by tuning-group identity. Resolved: first version formats **Automatic candidate label** with explicit `m`/`r`/`h` group prefixes.
+- Same-label candidate sessions can auto-collapse into one verdict or remain separate per session. Resolved: first version uses **Session-local candidate judgment** and does not auto-merge repeated sessions for the same candidate label.
+- Candidate evidence can be exploratory-only or strong enough for acceptance. Resolved: first version uses **Standard candidate acceptance** and does not auto-accept from reduced-repeat sessions.
+- Quality grades can be diagnostic notes or a second hard acceptance gate. Resolved: first version keeps `good`/`acceptable`/`bad` diagnostic under **Standard candidate acceptance** and does not let them replace explicit `pass/fail`.
+- Bench failure can mean a valid run-level negative result or a broken evidence chain. Resolved: first version uses **Action bench failure policy** to continue through action-level failures but abort on transport or protocol-chain failure.
+- A standard session can stop at first failure or continue to complete the selected matrix. Resolved: first version uses **Standard session completion rule** and continues unless the session abort policy triggers.
+- Manual action observations can use field axes or command-frame axes. Resolved: first version uses **Manual observation sign convention** for all structured per-run entries.
+- Bench automation can include build/flash orchestration or only the serial evidence loop. Resolved: first version uses **Bench-only action script responsibility** and treats build/flash as external recorded preconditions.
+- Flashed firmware identity can come from board-side text or required session metadata. Resolved: first version uses **Required action session metadata** because current startup text does not uniquely identify the flashed build.
+- Session provenance can stay manual in first pass or include automatic git snapshot metadata. Resolved: first version keeps provenance manual inside **Required action session metadata** and skips automatic git snapshot capture.
+- Action-effect comparability can ignore or record floor condition. Resolved: first version includes `surface_label` inside **Required action session metadata** because floor condition materially affects action evidence.
+- Action-effect comparability can ignore or record power condition. Resolved: first version includes `power_label` inside **Required action session metadata** because supply state materially affects action evidence.
+- Manual action-effect notes can mean subjective remarks or comparable measurements. Resolved: first version records **Structured action-effect observation** rather than notes alone.
+- Manual action-effect entry can mean per-run or per-round. Resolved: first version records **Structured action-effect observation** immediately after each run, not after a full 12-condition round.
+- Manual action-effect judgment can be only pass/fail or include a comparable quality label. Resolved: first version keeps `pass/fail` and also records one `good`/`acceptable`/`bad` quality grade inside **Structured action-effect observation**.
+- Move travel can mean final axis displacement or total path length. Resolved: first version stores final commanded-axis displacement in `actual_travel_mm` under **Manual observation sign convention**.
+- Lateral drift can mean final sideways displacement or peak sideways excursion. Resolved: first version stores final commanded-frame lateral displacement in `lateral_drift_mm`.
+- Rotate angle can mean final net rotation or total accumulated turned angle. Resolved: first version stores final signed net rotation at action end in `actual_angle_deg`.
+- End-heading error can be stored as magnitude only or as a signed bias. Resolved: first version stores signed `end_heading_error_deg` under **Manual observation sign convention**, while threshold checks use its absolute value.
+- Rotate translation crosstalk can mean final displacement or peak in-run excursion. Resolved: first version stores final action-end displacement magnitude in `translation_crosstalk_mm`.
 - AI-assisted tuning may run serial tests and temporary tuning overrides, but source defaults should change only through an **Evidence-backed tuning commit**.
 - Closed-loop tuning values can be fixed-point integers or human-readable floating-point values. Resolved: PID gains and limits use floating-point values, while calibration constants keep their explicit fixed-point or physical-unit suffixes.
 - Fixed-point output must not force humans to do arithmetic before editing config. Resolved: print and store scaled integer constants using the same suffix, such as `COUNTS_PER_REV_X100`.

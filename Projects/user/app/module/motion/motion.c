@@ -728,3 +728,28 @@ void motion_get_action_debug(motion_action_debug_t *debug)
 {
     motion_action_runtime_get_debug(debug);
 }
+
+void motion_action_get_tuning(motion_action_tuning_t *tuning)
+{
+    motion_action_runtime_get_tuning(tuning);
+}
+
+ai_status_t motion_action_set_move_tuning(const motion_action_move_tuning_t *tuning)
+{
+    return motion_action_runtime_set_move_tuning(tuning);
+}
+
+ai_status_t motion_action_set_rotate_tuning(const motion_action_rotate_tuning_t *tuning)
+{
+    return motion_action_runtime_set_rotate_tuning(tuning);
+}
+
+ai_status_t motion_action_set_heading_tuning(const motion_action_heading_tuning_t *tuning)
+{
+    return motion_action_runtime_set_heading_tuning(tuning);
+}
+
+ai_status_t motion_action_restore_default_tuning(void)
+{
+    return motion_action_runtime_restore_default_tuning();
+}

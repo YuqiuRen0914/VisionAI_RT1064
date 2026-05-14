@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ai_config.h"
+#include "comm_action_debug.h"
 #include "comm_calibration_debug.h"
 #include "comm_motion_debug.h"
 #include "comm_speed_debug.h"
@@ -101,6 +102,11 @@ static void comm_send_help(void)
     comm_send_line("speed static <duty_pct> <measured_threshold_mm_s>");
     comm_send_line("speed ff <duty_per_mm_s>");
     comm_send_line("speed filter <tau_ms>");
+    comm_send_line("action move <max_speed_mm_s> <accel_mm_s2> <kp_mm_s_per_mm> <approach_speed_mm_s>");
+    comm_send_line("action rotate <max_speed_mm_s> <accel_mm_s2> <kp_mm_s_per_deg> <approach_speed_mm_s>");
+    comm_send_line("action heading <kp_mm_s_per_deg> <max_rot_mm_s>");
+    comm_send_line("action show");
+    comm_send_line("action defaults");
     comm_send_line("motor <1|2|3|4|all> <duty_pct> <ms>");
     comm_send_line("move <fwd|back|left|right|ccw|cw> <duty_pct> <ms>");
     comm_send_line("vision");
@@ -181,6 +187,10 @@ static void comm_handle_line(char *line)
     else if(strcmp(command, "speed") == 0)
     {
         comm_speed_debug_handle(strtok(NULL, " "), comm_write_line_text);
+    }
+    else if(strcmp(command, "action") == 0)
+    {
+        comm_action_debug_handle(strtok(NULL, " "), comm_write_line_text);
     }
     else if(strcmp(command, "motor") == 0)
     {

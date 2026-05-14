@@ -24,6 +24,35 @@ typedef struct
 
 typedef struct
 {
+    float max_speed_mm_s;
+    float accel_mm_s2;
+    float kp_mm_s_per_mm;
+    float approach_speed_mm_s;
+} motion_action_move_tuning_t;
+
+typedef struct
+{
+    float max_speed_mm_s;
+    float accel_mm_s2;
+    float kp_mm_s_per_deg;
+    float approach_speed_mm_s;
+} motion_action_rotate_tuning_t;
+
+typedef struct
+{
+    float kp_mm_s_per_deg;
+    float max_rot_mm_s;
+} motion_action_heading_tuning_t;
+
+typedef struct
+{
+    motion_action_move_tuning_t move;
+    motion_action_rotate_tuning_t rotate;
+    motion_action_heading_tuning_t heading;
+} motion_action_tuning_t;
+
+typedef struct
+{
     motion_speed_encoder_total_t encoder_total;
     float imu_heading_deg;
     float imu_rate_dps;
@@ -50,5 +79,10 @@ uint8_t motion_action_runtime_take_result(motion_action_result_t *result);
 uint8_t motion_action_runtime_is_active(void);
 void motion_action_runtime_get_debug(motion_action_debug_t *debug);
 void motion_action_runtime_get_speed_sample(motion_speed_sample_t *sample);
+void motion_action_runtime_get_tuning(motion_action_tuning_t *tuning);
+ai_status_t motion_action_runtime_set_move_tuning(const motion_action_move_tuning_t *tuning);
+ai_status_t motion_action_runtime_set_rotate_tuning(const motion_action_rotate_tuning_t *tuning);
+ai_status_t motion_action_runtime_set_heading_tuning(const motion_action_heading_tuning_t *tuning);
+ai_status_t motion_action_runtime_restore_default_tuning(void);
 
 #endif

@@ -428,6 +428,8 @@
             <File><FileName>comm.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm.h</FilePath></File>
             <File><FileName>comm_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_debug.c</FilePath></File>
             <File><FileName>comm_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_debug.h</FilePath></File>
+            <File><FileName>comm_action_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_action_debug.c</FilePath></File>
+            <File><FileName>comm_action_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_action_debug.h</FilePath></File>
             <File><FileName>comm_calibration_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_calibration_debug.c</FilePath></File>
             <File><FileName>comm_calibration_debug.h</FileName><FileType>5</FileType><FilePath>..\user\app\module\interface\comm_calibration_debug.h</FilePath></File>
             <File><FileName>comm_motion_debug.c</FileName><FileType>1</FileType><FilePath>..\user\app\module\interface\comm_motion_debug.c</FilePath></File>
