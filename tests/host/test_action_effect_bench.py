@@ -283,7 +283,16 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertEqual(artifact["session"]["surface_label"], "mat")
             self.assertEqual(artifact["session"]["power_label"], "bench-supply")
             self.assertEqual(artifact["session"]["build_flash_policy"], "external_precondition")
+            self.assertEqual(artifact["session"]["primary_status"], "exploratory")
+            self.assertEqual(artifact["session"]["quality_flag"], "none")
             self.assertEqual(artifact["conditions"][0]["id"], "move_short_up")
+            self.assertEqual(artifact["conditions"][0]["run_count"], 1)
+            self.assertEqual(artifact["conditions"][0]["pass_count"], 1)
+            self.assertEqual(artifact["conditions"][0]["quality_counts"]["good"], 1)
+            self.assertEqual(
+                artifact["conditions"][0]["manual_aggregates"]["actual_travel_mm"],
+                {"median": 205.0, "min": 205.0, "max": 205.0},
+            )
             self.assertEqual(artifact["runs"][0]["observation"]["actual_travel_mm"], 205.0)
             self.assertEqual(artifact["runs"][0]["observation"]["pass_fail"], "pass")
             self.assertEqual(artifact["runs"][0]["threshold_evaluation"]["pass_fail"], "pass")
@@ -293,7 +302,12 @@ class ActionEffectBenchTests(unittest.TestCase):
                 "action_closed_loop",
             )
             summary = summary_path.read_text(encoding="utf-8")
-            self.assertIn("Structured Action-Effect Observation", summary)
+            self.assertIn("Primary status: `exploratory`", summary)
+            self.assertIn("Quality flag: `none`", summary)
+            self.assertIn("Condition Aggregates", summary)
+            self.assertIn("### `move_short_up`", summary)
+            self.assertIn("Pass: `1/1`", summary)
+            self.assertIn("Per-Run Details", summary)
             self.assertIn("Threshold Evaluation", summary)
             self.assertIn("Action Status Timeline", summary)
             self.assertIn("Final Board Snapshot", summary)
@@ -395,6 +409,223 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertIn("missing_manual_observation", artifact["session"]["acceptance_blockers"])
             self.assertEqual(artifact["runs"][0]["observation"]["manual_truth_state"], "missing")
             self.assertEqual(artifact["runs"][0]["observation"]["pass_fail"], "missing")
+
+    def test_condition_aggregates_use_pass_counts_quality_counts_and_median_spread(self):
+        bench = load_module()
+        condition = bench.CONDITIONS_BY_ID["move_short_up"]
+        runs = [
+            {
+                "condition_id": condition.id,
+                "observation": {
+                    "manual_truth_state": "provided",
+                    "actual_travel_mm": 198.0,
+                    "lateral_drift_mm": -3.0,
+                    "end_heading_error_deg": 1.0,
+                    "quality": "good",
+                },
+                "threshold_evaluation": {"pass_fail": "pass"},
+            },
+            {
+                "condition_id": condition.id,
+                "observation": {
+                    "manual_truth_state": "provided",
+                    "actual_travel_mm": 205.0,
+                    "lateral_drift_mm": 4.0,
+                    "end_heading_error_deg": -1.5,
+                    "quality": "acceptable",
+                },
+                "threshold_evaluation": {"pass_fail": "pass"},
+            },
+            {
+                "condition_id": condition.id,
+                "observation": {
+                    "manual_truth_state": "provided",
+                    "actual_travel_mm": 220.0,
+                    "lateral_drift_mm": 12.0,
+                    "end_heading_error_deg": 4.0,
+                    "quality": "bad",
+                },
+                "threshold_evaluation": {"pass_fail": "fail"},
+            },
+        ]
+
+        aggregate = bench.make_condition_artifact(condition, 3, runs)
+
+        self.assertEqual(aggregate["run_count"], 3)
+        self.assertEqual(aggregate["pass_count"], 2)
+        self.assertEqual(aggregate["fail_count"], 1)
+        self.assertEqual(aggregate["missing_count"], 0)
+        self.assertEqual(aggregate["quality_counts"], {"good": 1, "acceptable": 1, "bad": 1})
+        self.assertEqual(
+            aggregate["manual_aggregates"]["actual_travel_mm"],
+            {"median": 205.0, "min": 198.0, "max": 220.0},
+        )
+        self.assertEqual(
+            aggregate["manual_aggregates"]["lateral_drift_mm"],
+            {"median": 4.0, "min": -3.0, "max": 12.0},
+        )
+
+    def test_session_primary_status_rules_are_derived_from_this_session_only(self):
+        bench = load_module()
+
+        def make_run(planned_run, pass_fail="pass", quality="good", remote_returncode=0):
+            return {
+                "run_index": planned_run.run_index,
+                "repeat_index": planned_run.repeat_index,
+                "condition_id": planned_run.condition.id,
+                "remote_returncode": remote_returncode,
+                "observation": {
+                    "manual_truth_state": "provided" if pass_fail != "missing" else "missing",
+                    "actual_travel_mm": 200.0,
+                    "lateral_drift_mm": 0.0,
+                    "end_heading_error_deg": 0.0,
+                    "quality": quality,
+                    "notes": "",
+                },
+                "threshold_evaluation": {"pass_fail": pass_fail, "failed_metrics": []},
+            }
+
+        full_plan = bench.build_session_plan(scope="full-matrix", repeats=3)
+        self.assertEqual(
+            bench.derive_session_judgment(full_plan, [make_run(run) for run in full_plan.runs])[
+                "primary_status"
+            ],
+            "accepted",
+        )
+
+        subset_plan = bench.build_session_plan(
+            scope="subset", condition_ids=["move_short_up"], repeats=3
+        )
+        self.assertEqual(
+            bench.derive_session_judgment(
+                subset_plan, [make_run(run) for run in subset_plan.runs]
+            )["primary_status"],
+            "scoped-pass",
+        )
+
+        rejected_runs = [make_run(run) for run in subset_plan.runs]
+        rejected_runs[1]["threshold_evaluation"]["pass_fail"] = "fail"
+        self.assertEqual(
+            bench.derive_session_judgment(subset_plan, rejected_runs)["primary_status"],
+            "rejected",
+        )
+
+        exploratory_plan = bench.build_session_plan(
+            scope="subset", condition_ids=["move_short_up"], repeats=1
+        )
+        self.assertEqual(
+            bench.derive_session_judgment(
+                exploratory_plan, [make_run(exploratory_plan.runs[0], pass_fail="fail")]
+            )["primary_status"],
+            "exploratory",
+        )
+
+        partial_runs = [make_run(run) for run in subset_plan.runs]
+        partial_runs[2] = make_run(subset_plan.runs[2], pass_fail="missing")
+        self.assertEqual(
+            bench.derive_session_judgment(subset_plan, partial_runs)["primary_status"],
+            "partial",
+        )
+
+        aborted_runs = [make_run(subset_plan.runs[0], remote_returncode=255)]
+        self.assertEqual(
+            bench.derive_session_judgment(subset_plan, aborted_runs)["primary_status"],
+            "aborted",
+        )
+
+    def test_quality_flag_is_separate_and_tracks_grades_notes_and_unstable_spread(self):
+        bench = load_module()
+        plan = bench.build_session_plan(scope="subset", condition_ids=["move_short_up"], repeats=3)
+
+        def make_run(planned_run, metrics, quality="good", notes=""):
+            return {
+                "run_index": planned_run.run_index,
+                "repeat_index": planned_run.repeat_index,
+                "condition_id": planned_run.condition.id,
+                "remote_returncode": 0,
+                "observation": {
+                    "manual_truth_state": "provided",
+                    "actual_travel_mm": 200.0 + metrics["actual_travel_error_mm"],
+                    "lateral_drift_mm": metrics["lateral_drift_mm"],
+                    "end_heading_error_deg": metrics["end_heading_error_deg"],
+                    "quality": quality,
+                    "notes": notes,
+                },
+                "threshold_evaluation": {
+                    "pass_fail": "pass",
+                    "failed_metrics": [],
+                    "metrics": metrics,
+                },
+            }
+
+        stable_runs = [
+            make_run(
+                run,
+                {
+                    "actual_travel_error_mm": 0.0,
+                    "lateral_drift_mm": 1.0,
+                    "end_heading_error_deg": 0.5,
+                },
+            )
+            for run in plan.runs
+        ]
+        self.assertEqual(bench.derive_session_judgment(plan, stable_runs)["quality_flag"], "none")
+
+        bad_grade_runs = list(stable_runs)
+        bad_grade_runs[1] = make_run(
+            plan.runs[1],
+            {
+                "actual_travel_error_mm": 0.0,
+                "lateral_drift_mm": 1.0,
+                "end_heading_error_deg": 0.5,
+            },
+            quality="bad",
+        )
+        self.assertEqual(
+            bench.derive_session_judgment(plan, bad_grade_runs)["quality_flag"], "concern"
+        )
+
+        abnormal_note_runs = list(stable_runs)
+        abnormal_note_runs[1] = make_run(
+            plan.runs[1],
+            {
+                "actual_travel_error_mm": 0.0,
+                "lateral_drift_mm": 1.0,
+                "end_heading_error_deg": 0.5,
+            },
+            notes="visible slip near the end",
+        )
+        self.assertEqual(
+            bench.derive_session_judgment(plan, abnormal_note_runs)["quality_flag"], "concern"
+        )
+
+        spread_runs = [
+            make_run(
+                plan.runs[0],
+                {
+                    "actual_travel_error_mm": -11.0,
+                    "lateral_drift_mm": 1.0,
+                    "end_heading_error_deg": 0.5,
+                },
+            ),
+            make_run(
+                plan.runs[1],
+                {
+                    "actual_travel_error_mm": 0.0,
+                    "lateral_drift_mm": 1.0,
+                    "end_heading_error_deg": 0.5,
+                },
+            ),
+            make_run(
+                plan.runs[2],
+                {
+                    "actual_travel_error_mm": 11.0,
+                    "lateral_drift_mm": 1.0,
+                    "end_heading_error_deg": 0.5,
+                },
+            ),
+        ]
+        self.assertEqual(bench.derive_session_judgment(plan, spread_runs)["quality_flag"], "concern")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -643,14 +644,56 @@ def run_remote(args: argparse.Namespace, script: str) -> RemoteResult:
             pass
 
 
-def make_condition_artifact(condition: ActionCondition, run_count: int) -> dict[str, object]:
+QUALITY_GRADES = ("good", "acceptable", "bad")
+
+
+def make_condition_artifact(
+    condition: ActionCondition,
+    selected_runs: int,
+    runs: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    runs = runs or []
+    condition_runs = [run for run in runs if run["condition_id"] == condition.id]
+    pass_fail_values = [
+        str(run["threshold_evaluation"]["pass_fail"])
+        for run in condition_runs
+    ]
+    quality_counts = {grade: 0 for grade in QUALITY_GRADES}
+    numeric_observations: dict[str, list[float]] = {}
+
+    for run in condition_runs:
+        observation = run["observation"]
+        quality = observation.get("quality")
+        if quality in quality_counts:
+            quality_counts[str(quality)] += 1
+        for key, value in observation.items():
+            if key in {"manual_truth_state", "measurement_semantics", "quality", "notes", "pass_fail"}:
+                continue
+            if isinstance(value, (int, float)):
+                numeric_observations.setdefault(key, []).append(float(value))
+
+    manual_aggregates = {
+        key: {
+            "median": float(statistics.median(values)),
+            "min": min(values),
+            "max": max(values),
+        }
+        for key, values in numeric_observations.items()
+    }
+
     return {
         "id": condition.id,
         "action": condition.action,
         "bucket": condition.bucket,
         "direction": condition.direction,
         "value": condition.value,
-        "selected_runs": run_count,
+        "selected_runs": selected_runs,
+        "run_count": len(condition_runs),
+        "pass_count": pass_fail_values.count("pass"),
+        "fail_count": pass_fail_values.count("fail"),
+        "missing_count": pass_fail_values.count("missing"),
+        "quality_counts": quality_counts,
+        "manual_aggregates": manual_aggregates,
     }
 
 
@@ -688,6 +731,75 @@ def derive_acceptance_blockers(runs: list[dict[str, object]]) -> list[str]:
     return blockers
 
 
+def derive_session_judgment(plan: SessionPlan, runs: list[dict[str, object]]) -> dict[str, object]:
+    if any(run["remote_returncode"] != 0 for run in runs):
+        primary_status = "aborted"
+        reasons = ["remote_run_failure"]
+    elif len(runs) < len(plan.runs):
+        primary_status = "partial"
+        reasons = ["selected_scope_incomplete"]
+    elif not plan.standard_evidence:
+        primary_status = "exploratory"
+        reasons = ["nonstandard_repeat_count"]
+    else:
+        pass_fail_values = [str(run["threshold_evaluation"]["pass_fail"]) for run in runs]
+        if "missing" in pass_fail_values:
+            primary_status = "partial"
+            reasons = ["missing_manual_observation"]
+        elif "fail" in pass_fail_values:
+            primary_status = "rejected"
+            reasons = ["external_threshold_failure"]
+        elif plan.scope == "full-matrix":
+            primary_status = "accepted"
+            reasons = ["standard_full_matrix_all_pass"]
+        else:
+            primary_status = "scoped-pass"
+            reasons = ["standard_subset_all_pass"]
+
+    quality_flag = "concern" if find_quality_concerns(plan, runs) else "none"
+    return {
+        "primary_status": primary_status,
+        "primary_status_reasons": reasons,
+        "quality_flag": quality_flag,
+    }
+
+
+QUALITY_CONCERN_NOTE_RE = re.compile(
+    r"\b(slip|severe oscillation|oscillation|collision stop|collision|abnormal)\b|打滑|振荡|震荡|碰撞",
+    re.IGNORECASE,
+)
+
+
+def find_quality_concerns(plan: SessionPlan, runs: list[dict[str, object]]) -> list[str]:
+    concerns: list[str] = []
+    for run in runs:
+        observation = run["observation"]
+        if observation.get("quality") == "bad" and "bad_quality_grade" not in concerns:
+            concerns.append("bad_quality_grade")
+        notes = str(observation.get("notes", ""))
+        if notes and QUALITY_CONCERN_NOTE_RE.search(notes) and "abnormal_note" not in concerns:
+            concerns.append("abnormal_note")
+
+    for condition in plan.conditions:
+        condition_runs = [run for run in runs if run["condition_id"] == condition.id]
+        if len(condition_runs) < 2:
+            continue
+        thresholds = EXTERNAL_THRESHOLDS[condition.bucket]
+        metric_values: dict[str, list[float]] = {}
+        for run in condition_runs:
+            metrics = run["threshold_evaluation"].get("metrics", {})
+            for metric, value in metrics.items():
+                if isinstance(value, (int, float)):
+                    metric_values.setdefault(metric, []).append(float(value))
+        for metric, values in metric_values.items():
+            threshold = thresholds.get(metric)
+            if threshold is not None and len(values) >= 2 and max(values) - min(values) > threshold * 2:
+                reason = f"unstable_{condition.id}_{metric}"
+                if reason not in concerns:
+                    concerns.append(reason)
+    return concerns
+
+
 def compact_mapping(values: dict[str, object]) -> str:
     return ", ".join(f"{key}={value}" for key, value in values.items())
 
@@ -708,21 +820,60 @@ def make_summary(artifact: dict[str, object], raw_log_path: Path, json_path: Pat
         f"- Surface: `{session['surface_label']}`",
         f"- Power: `{session['power_label']}`",
         f"- Build/flash policy: `{session['build_flash_policy']}`",
+        f"- Primary status: `{session['primary_status']}`",
+        f"- Quality flag: `{session['quality_flag']}`",
         f"- Raw log: `{raw_log_path}`",
         f"- JSON: `{json_path}`",
         "",
-        "## Conditions",
+        "## Condition Aggregates",
         "",
     ]
     for condition in conditions:
-        lines.append(
-            f"- `{condition['id']}` {condition['bucket']} {condition['direction']} "
-            f"value={condition['value']} repeats={condition['selected_runs']}"
+        quality_counts = condition["quality_counts"]
+        quality_text = ", ".join(
+            f"{grade}={quality_counts.get(grade, 0)}" for grade in QUALITY_GRADES
         )
+        lines.extend(
+            [
+                f"### `{condition['id']}`",
+                "",
+                (
+                    f"- {condition['bucket']} {condition['direction']} value={condition['value']} "
+                    f"selected_runs={condition['selected_runs']} observed_runs={condition['run_count']}"
+                ),
+                (
+                    f"- Pass: `{condition['pass_count']}/{condition['run_count']}` "
+                    f"fail={condition['fail_count']} missing={condition['missing_count']}"
+                ),
+                f"- Quality: {quality_text}",
+            ]
+        )
+        manual_aggregates = condition["manual_aggregates"]
+        if manual_aggregates:
+            lines.extend(
+                [
+                    "",
+                    "| Field | Median | Min | Max |",
+                    "| ----- | ------ | --- | --- |",
+                ]
+            )
+            for field, aggregate in manual_aggregates.items():
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            field,
+                            fmt_float(float(aggregate["median"])),
+                            fmt_float(float(aggregate["min"])),
+                            fmt_float(float(aggregate["max"])),
+                        ]
+                    )
+                    + " |"
+                )
+        lines.append("")
     lines.extend(
         [
-            "",
-            "## Structured Action-Effect Observation",
+            "## Per-Run Details",
             "",
             "| Run | Repeat | Condition | Final vision | Pass/fail | Quality | Observation | Notes |",
             "| --- | ------ | --------- | ------------ | --------- | ------- | ----------- | ----- |",
@@ -981,6 +1132,7 @@ def main(
 
     raw_log_path.write_text("\n".join(raw_chunks), encoding="utf-8")
     acceptance_blockers = derive_acceptance_blockers(runs)
+    session_judgment = derive_session_judgment(plan, runs)
 
     artifact: dict[str, object] = {
         "session": {
@@ -1002,8 +1154,11 @@ def main(
             "baud": args.baud,
             "acceptance_eligible": not acceptance_blockers,
             "acceptance_blockers": acceptance_blockers,
+            **session_judgment,
         },
-        "conditions": [make_condition_artifact(condition, plan.repeats) for condition in plan.conditions],
+        "conditions": [
+            make_condition_artifact(condition, plan.repeats, runs) for condition in plan.conditions
+        ],
         "runs": runs,
     }
     json_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
