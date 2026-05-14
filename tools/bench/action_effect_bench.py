@@ -183,6 +183,21 @@ def format_tuning_command(group: str, values: tuple[float, ...]) -> str:
     return f"action {group} " + " ".join(fmt_float(value) for value in values)
 
 
+def format_tuning_summary(args: argparse.Namespace) -> str:
+    def group(label: str, values: tuple[float, ...] | None) -> str:
+        if values is None:
+            return f"{label}=default"
+        return f"{label}=" + " ".join(fmt_float(value) for value in values)
+
+    return "; ".join(
+        [
+            group("move", args.action_move),
+            group("rotate", args.action_rotate),
+            group("heading", args.action_heading),
+        ]
+    )
+
+
 def normalize_bucket(value: str) -> str:
     try:
         return BUCKET_ALIASES[value]
@@ -969,6 +984,54 @@ def make_summary(artifact: dict[str, object], raw_log_path: Path, json_path: Pat
     return "\n".join(lines)
 
 
+def artifact_reference(artifact_root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(artifact_root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def append_long_term_result(
+    *,
+    artifact_root: Path,
+    artifact: dict[str, object],
+    raw_log_path: Path,
+    json_path: Path,
+    summary_path: Path,
+    parameter_summary: str,
+) -> None:
+    ledger_path = artifact_root / "hardware-test-results.md"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    if not ledger_path.exists():
+        ledger_path.write_text(
+            "\n".join(
+                [
+                    "# Action-Effect Bench Long-Term Results",
+                    "",
+                    "| Session | Candidate | Primary status | Coverage | Quality | Parameters | Artifacts |",
+                    "| ------- | --------- | -------------- | -------- | ------- | ---------- | --------- |",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    session = artifact["session"]
+    row = (
+        f"| `{session['id']}` "
+        f"| `{session['candidate_label']}` "
+        f"| `{session['primary_status']}` "
+        f"| `{session['coverage_summary']}` "
+        f"| `{session['quality_flag']}` "
+        f"| `{parameter_summary}` "
+        f"| raw: `{artifact_reference(artifact_root, raw_log_path)}`; "
+        f"json: `{artifact_reference(artifact_root, json_path)}`; "
+        f"md: `{artifact_reference(artifact_root, summary_path)}` |"
+    )
+    with ledger_path.open("a", encoding="utf-8") as handle:
+        handle.write(row + "\n")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=os.environ.get("KEIL_SSH_HOST", DEFAULT_HOST))
@@ -1163,6 +1226,14 @@ def main(
     }
     json_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary_path.write_text(make_summary(artifact, raw_log_path, json_path), encoding="utf-8")
+    append_long_term_result(
+        artifact_root=args.artifact_root,
+        artifact=artifact,
+        raw_log_path=raw_log_path,
+        json_path=json_path,
+        summary_path=summary_path,
+        parameter_summary=format_tuning_summary(args),
+    )
 
     print(f"Raw log: {raw_log_path}")
     print(f"JSON: {json_path}")

@@ -1,6 +1,6 @@
 # Maintain append-only long-term action bench results
 
-Status: ready-for-agent
+Status: done
 Type: enhancement
 
 ## Parent
@@ -25,11 +25,11 @@ The ledger should accept completed, partial, exploratory, and aborted sessions, 
 
 ## Acceptance criteria
 
-- [ ] The bench automatically appends one row per session to `.scratch/action-effect-bench/hardware-test-results.md`
-- [ ] Each row includes session identity, candidate identity, coverage summary, status, quality flag, and artifact references
-- [ ] Completed, exploratory, partial, and aborted sessions all register in the ledger
-- [ ] New sessions append new rows and never rewrite older rows
-- [ ] The resulting ledger is readable as a long-term comparison table across action-effect bench sessions
+- [x] The bench automatically appends one row per session to `.scratch/action-effect-bench/hardware-test-results.md`
+- [x] Each row includes session identity, candidate identity, coverage summary, status, quality flag, and artifact references
+- [x] Completed, exploratory, partial, and aborted sessions all register in the ledger
+- [x] New sessions append new rows and never rewrite older rows
+- [x] The resulting ledger is readable as a long-term comparison table across action-effect bench sessions
 
 ## Blocked by
 

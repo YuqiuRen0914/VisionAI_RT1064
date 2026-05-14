@@ -56,6 +56,23 @@ class FakeRemote:
         )
 
 
+class FailingRemote:
+    def __init__(self):
+        self.scripts = []
+
+    def __call__(self, args, script):
+        self.scripts.append(script)
+        return load_module().RemoteResult(
+            returncode=255,
+            stdout=(
+                "### ACTION_RUN_BEGIN run=1 condition=move_short_up\n"
+                ">>> vision sim reset\n"
+                "OK vision sim reset\n"
+            ),
+            stderr="serial disconnected",
+        )
+
+
 class ActionEffectBenchTests(unittest.TestCase):
     def test_external_thresholds_compute_run_pass_fail_and_missing_blocks_acceptance(self):
         bench = load_module()
@@ -312,6 +329,15 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertIn("Action Status Timeline", summary)
             self.assertIn("Final Board Snapshot", summary)
 
+            ledger_path = root / "hardware-test-results.md"
+            self.assertTrue(ledger_path.exists())
+            ledger = ledger_path.read_text(encoding="utf-8")
+            self.assertIn("| Session | Candidate | Primary status | Coverage | Quality | Parameters | Artifacts |", ledger)
+            self.assertIn(
+                "| `AE99` | `m180-600-3-40_r120-400-4-30_h3-80` | `exploratory` | `move_short_up; repeats=1 exploratory` | `none` | `move=180 600 3 40; rotate=120 400 4 30; heading=3 80` | raw: `sessions/AE99/AE99.raw.log`; json: `sessions/AE99/AE99.json`; md: `sessions/AE99/AE99.summary.md` |",
+                ledger,
+            )
+
     def test_session_can_record_more_than_one_run(self):
         bench = load_module()
         remote = FakeRemote()
@@ -409,6 +435,116 @@ class ActionEffectBenchTests(unittest.TestCase):
             self.assertIn("missing_manual_observation", artifact["session"]["acceptance_blockers"])
             self.assertEqual(artifact["runs"][0]["observation"]["manual_truth_state"], "missing")
             self.assertEqual(artifact["runs"][0]["observation"]["pass_fail"], "missing")
+
+    def test_long_term_ledger_appends_without_rewriting_existing_rows_and_records_aborted(self):
+        bench = load_module()
+        remote = FailingRemote()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ledger_path = root / "hardware-test-results.md"
+            original_ledger = (
+                "# Action-Effect Bench Long-Term Results\n"
+                "\n"
+                "| Session | Candidate | Primary status | Coverage | Quality | Parameters | Artifacts |\n"
+                "| ------- | --------- | -------------- | -------- | ------- | ---------- | --------- |\n"
+                "| `AE01` | `old_candidate` | `scoped-pass` | `subset: old` | `none` | `move=old; rotate=old; heading=old` | raw: `old.raw`; json: `old.json`; md: `old.md` |\n"
+            )
+            ledger_path.write_text(original_ledger, encoding="utf-8")
+
+            argv = [
+                "--artifact-root",
+                tmp,
+                "--session-id",
+                "AE102",
+                "--candidate-label",
+                "abort_candidate",
+                "--firmware-label",
+                "fw-test",
+                "--flash-status",
+                "flashed",
+                "--surface-label",
+                "mat",
+                "--power-label",
+                "bench-supply",
+                "--action",
+                "move",
+                "--direction",
+                "up",
+                "--value",
+                "20",
+                "--runs",
+                "1",
+            ]
+            answers = iter(["missing", "serial failed before measurement"])
+            with patch("builtins.input", lambda _prompt="": next(answers)), patch("builtins.print"):
+                exit_code = bench.main(argv, remote_runner=remote)
+
+            self.assertEqual(exit_code, 255)
+            ledger = ledger_path.read_text(encoding="utf-8")
+            self.assertTrue(ledger.startswith(original_ledger))
+            self.assertEqual(ledger.count("`AE01`"), 1)
+            self.assertIn(
+                "| `AE102` | `abort_candidate` | `aborted` | `move_short_up; repeats=1 exploratory` | `none` | `move=default; rotate=default; heading=default` | raw: `sessions/AE102/AE102.raw.log`; json: `sessions/AE102/AE102.json`; md: `sessions/AE102/AE102.summary.md` |",
+                ledger,
+            )
+
+    def test_standard_partial_session_registers_in_long_term_ledger(self):
+        bench = load_module()
+        remote = FakeRemote()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            argv = [
+                "--artifact-root",
+                tmp,
+                "--session-id",
+                "AE103",
+                "--candidate-label",
+                "partial_candidate",
+                "--firmware-label",
+                "fw-test",
+                "--flash-status",
+                "flashed",
+                "--surface-label",
+                "mat",
+                "--power-label",
+                "bench-supply",
+                "--action",
+                "move",
+                "--direction",
+                "up",
+                "--value",
+                "20",
+                "--runs",
+                "3",
+            ]
+            answers = iter(
+                [
+                    "record",
+                    "201",
+                    "1",
+                    "0",
+                    "good",
+                    "run 1",
+                    "record",
+                    "202",
+                    "2",
+                    "1",
+                    "acceptable",
+                    "run 2",
+                    "missing",
+                    "operator stopped measurement",
+                ]
+            )
+            with patch("builtins.input", lambda _prompt="": next(answers)), patch("builtins.print"):
+                exit_code = bench.main(argv, remote_runner=remote)
+
+            self.assertEqual(exit_code, 0)
+            ledger = (Path(tmp) / "hardware-test-results.md").read_text(encoding="utf-8")
+            self.assertIn(
+                "| `AE103` | `partial_candidate` | `partial` | `move_short_up` | `none` | `move=default; rotate=default; heading=default` | raw: `sessions/AE103/AE103.raw.log`; json: `sessions/AE103/AE103.json`; md: `sessions/AE103/AE103.summary.md` |",
+                ledger,
+            )
 
     def test_condition_aggregates_use_pass_counts_quality_counts_and_median_spread(self):
         bench = load_module()
